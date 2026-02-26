@@ -7,6 +7,7 @@ Streamlit 版：精簡排版、學術說明、可調邊界條件
 import streamlit as st
 import pandas as pd
 import numpy as np
+import time
 
 # ── 封閉公式解析解（用於驗算 strategy="fixed" 引擎精度）──────────────
 def _analytical_fixed(A0, W, r, n):
@@ -19,48 +20,81 @@ def _analytical_fixed(A0, W, r, n):
     val = (A0 - W) * (1 + r) ** n - W * ((1 + r) ** n - (1 + r)) / r
     return max(0.0, val)
 
-# ── 蒙地卡羅核心（st.cache_data 加速重複計算）─────────────────────────
+# ── 蒙地卡羅核心（NumPy 全向量化，無 Python 內層迴圈）────────────────
 @st.cache_data
 def _run_monte_carlo(A0, W0, r_mean_pct, r_std_pct,
                      n_years, strategy, pension_annual,
-                     claim_age, age_start, n_sim=10_000):
+                     claim_age, age_start,
+                     med_premium_pct=0.0,
+                     n_sim=10_000):
     """
-    以常態分布隨機報酬率跑 n_sim 條路徑，回傳成功率與分位數。
-    固定隨機種子（seed=42）確保可重現。
+    以常態分布隨機報酬率模擬 n_sim 條路徑。
+    全部邏輯以 NumPy 向量化執行（shape = n_sim），外層只迴圈 n_years 次。
+    包含：固定提領 / 消費微笑曲線 / GK 護欄、醫療溢價指數複利、勞保補貼。
+    固定隨機種子（seed=42）確保相同參數可重現。
     """
-    rng = np.random.default_rng(seed=42)
-    r_mean = r_mean_pct / 100
-    r_std  = r_std_pct  / 100
+    rng     = np.random.default_rng(seed=42)
+    r_mean  = r_mean_pct  / 100.0
+    r_std   = r_std_pct   / 100.0
+    med_rate = med_premium_pct / 100.0
+
     # 預先生成所有隨機報酬：shape (n_sim, n_years)
     returns = rng.normal(r_mean, r_std, (n_sim, n_years))
 
-    finals = np.zeros(n_sim)
-    IWR = W0 / A0 if A0 > 0 else 0.0
+    A         = np.full(n_sim, float(A0))       # 每條路徑的資產餘額
+    alive     = np.ones(n_sim, dtype=bool)       # 尚未歸零的路徑遮罩
+    IWR       = W0 / A0 if A0 > 0 else 0.0
+    gk_spend  = np.full(n_sim, float(W0))        # GK 每路徑追蹤的支出目標
 
-    for i in range(n_sim):
-        A = float(A0)
-        gk_spend = float(W0)
-        for j in range(n_years):
-            if A <= 0:
-                break
-            current_age = age_start + j
-            pension_income = (pension_annual
-                              if pension_annual > 0 and current_age >= claim_age
-                              else 0.0)
-            if strategy == "gk":
-                cur_wr = gk_spend / A if A > 0 else 999.0
-                if cur_wr < IWR * 0.8:
-                    gk_spend *= 1.1
-                elif cur_wr > IWR * 1.2:
-                    gk_spend *= 0.9
-                spend = gk_spend
+    for j in range(n_years):
+        current_age = age_start + j
+
+        # ── 勞保 / 勞退補貼 ──────────────────────────────────────────
+        pension_income = (pension_annual
+                          if pension_annual > 0 and current_age >= claim_age
+                          else 0.0)
+
+        # ── 策略決定本期總目標支出 ────────────────────────────────────
+        if strategy == "fixed":
+            spend = np.full(n_sim, float(W0))
+
+        elif strategy == "smile":
+            if 75 <= current_age <= 84:
+                mult = 0.8
+            elif current_age >= 85:
+                mult = 1.1
             else:
-                spend = W0
-            spend_from_asset = max(0.0, spend - pension_income)
-            A = (A - spend_from_asset) * (1 + returns[i, j])
-        finals[i] = max(0.0, A)
+                mult = 1.0
+            spend = np.full(n_sim, float(W0) * mult)
 
-    success_rate = float((finals > 0).mean() * 100)
+        elif strategy == "gk":
+            # GK 護欄：向量化版本，每條路徑獨立調整提領目標
+            safe  = A > 0
+            cur_wr = np.where(safe, gk_spend / np.where(safe, A, 1.0), 999.0)
+            gk_spend = np.where(cur_wr < IWR * 0.8, gk_spend * 1.1, gk_spend)
+            gk_spend = np.where(cur_wr > IWR * 1.2, gk_spend * 0.9, gk_spend)
+            spend = gk_spend.copy()
+
+        else:
+            spend = np.full(n_sim, float(W0))
+
+        # ── 醫療溢價指數複利（70 歲起，與主引擎邏輯一致）─────────────
+        if current_age >= 70 and med_rate > 0:
+            med_base  = W0 * 0.15
+            med_extra = med_base * ((1 + med_rate) ** (current_age - 65) - 1)
+            spend = spend + med_extra
+
+        # ── 從資產提領 = 總支出 − 勞保勞退，僅對存活路徑作用 ──────────
+        spend_from_asset = np.where(alive, np.maximum(0.0, spend - pension_income), 0.0)
+
+        # ── 期初提領保守原則：(A − spend) × (1 + r) ─────────────────
+        A = (A - spend_from_asset) * (1.0 + returns[:, j])
+
+        # 更新存活遮罩
+        alive = alive & (A > 0)
+
+    finals       = np.maximum(0.0, A)
+    success_rate = float(alive.mean() * 100)
     p10 = float(np.percentile(finals, 10))
     p50 = float(np.percentile(finals, 50))
     p90 = float(np.percentile(finals, 90))
@@ -506,6 +540,7 @@ A_n = A₀ − W × n                                         （r = 0 時）
         """)
         _sim_val = run_dynamic_projection(A0, W0, r_pct, n_years, age_start,
                                           strategy="fixed",
+                                          med_premium_pct=0.0,
                                           pension_annual=0, claim_age=int(claim_age))
         _ana_val = _analytical_fixed(A0, W0, r_pct / 100, n_years)
         _err_abs = abs(_sim_val - _ana_val)
@@ -545,19 +580,27 @@ A_n = A₀ − W × n                                         （r = 0 時）
                 help="股票型組合歷史波動率約 15–20%；保守組合可設 10–12%；0050/S&P500 約 18–20%",
             )
         with mc_col2:
-            mc_strategy = st.radio("模擬策略", ["固定提領", "GK 護欄"], horizontal=True)
-        mc_strat = "gk" if mc_strategy == "GK 護欄" else "fixed"
-
-        with st.spinner("模擬中（10,000 次隨機路徑）…"):
-            mc_sr, mc_p10, mc_p50, mc_p90 = _run_monte_carlo(
-                A0, W0, r_pct, mc_std,
-                n_years, mc_strat,
-                pension_annual, int(claim_age), age_start,
+            mc_strategy = st.radio(
+                "模擬策略",
+                ["固定提領", "消費微笑曲線", "GK 護欄"],
+                horizontal=True,
+                help="與主引擎相同的三種策略，均包含醫療溢價及勞保補貼邏輯",
             )
+        _strat_map = {"固定提領": "fixed", "消費微笑曲線": "smile", "GK 護欄": "gk"}
+        mc_strat = _strat_map[mc_strategy]
+
+        _t0 = time.perf_counter()
+        mc_sr, mc_p10, mc_p50, mc_p90 = _run_monte_carlo(
+            A0, W0, r_pct, mc_std,
+            n_years, mc_strat,
+            pension_annual, int(claim_age), age_start,
+            med_premium_pct=medical_premium,
+        )
+        _elapsed_ms = (time.perf_counter() - _t0) * 1000
+        _from_cache = _elapsed_ms < 5.0   # 快取命中通常 < 1 ms
 
         mm1, mm2, mm3, mm4 = st.columns(4)
         with mm1:
-            delta_color = "normal" if mc_sr >= 90 else ("off" if mc_sr >= 75 else "inverse")
             st.metric("成功機率", f"{mc_sr:.1f}%",
                       "≥90% 為安全" if mc_sr >= 90 else ("75–90% 需注意" if mc_sr >= 75 else "< 75% 危險"))
         with mm2:
@@ -574,11 +617,14 @@ A_n = A₀ − W × n                                         （r = 0 時）
         else:
             st.error(f"❌ 低成功機率（{mc_sr:.1f}%）：在大多數市場情境下資產將耗盡，強烈建議重新規劃。")
 
+        _cache_note = "⚡ 來自快取（參數未變動）" if _from_cache else f"🔄 即時計算完成（{_elapsed_ms:.0f} ms）"
         st.caption(
+            f"{_cache_note}　｜　"
             f"參數：r̄ = {r_pct}%、σ = {mc_std}%、10,000 次模擬、{mc_strategy}、"
+            f"醫療溢價 {medical_premium}%、"
             f"起始年齡 {age_start} 歲、目標年齡 {age_end} 歲。"
-            "隨機種子 seed=42 固定，確保相同參數下結果可重現。"
-            "注意：此模擬採簡化常態分布，未含左偏厚尾（fat-tail），實際破產風險略高於顯示值。"
+            "　隨機種子 seed=42，相同參數結果可重現。"
+            "　注意：常態分布低估極端尾部事件，實際破產機率略高於顯示值。"
         )
     st.divider()
 
