@@ -125,6 +125,45 @@ with st.sidebar.expander("資產與提領", expanded=True):
     A0 = A0_wan * 10_000
     W0 = W0_wan * 10_000
 
+with st.sidebar.expander("報酬與通膨", expanded=True):
+    inflation_pct = st.slider(
+        "預期通膨率 CPI (%)",
+        min_value=0.0,
+        max_value=8.0,
+        value=2.0,
+        step=0.5,
+        help="預期年通膨率，可參考主計總處與高齡家庭 CPI（台灣近年約 1.5%～2%）",
+    )
+    use_inferred_r = st.radio(
+        "實質報酬率 r 來源",
+        ["依資產結構推論", "手動設定"],
+        index=0,
+        help="推論值由下方的資產結構加權計算",
+    )
+    if use_inferred_r == "手動設定":
+        r_pct = st.slider(
+            "預期實質報酬率 r (%)",
+            min_value=0.0,
+            max_value=15.0,
+            value=4.0,
+            step=0.5,
+            help="扣除通膨後的年化回報",
+        )
+    else:
+        r_pct = None  # 待資產結構計算後填入
+    medical_premium = st.slider(
+        "醫療溢價 i_m (CPI + %)",
+        min_value=0.0,
+        max_value=4.0,
+        value=1.7,
+        step=0.1,
+        help="台灣高齡家庭 CPI 長期高於整體，醫療保健權重較高，建議 1.5%～2%；預設 1.7% 符合實證",
+    )
+
+with st.sidebar.expander("年齡區間", expanded=True):
+    age_start = st.number_input("起始年齡 (歲)", 25, 70, 40, 1)
+    age_end = st.number_input("目標年齡 (歲)", 70, 100, 90, 1)
+
 # 資產結構：支援「金額」或「百分比」兩種輸入模式
 with st.sidebar.expander("資產結構配置", expanded=True):
     asset_input_mode = st.radio(
@@ -167,45 +206,10 @@ with st.sidebar.expander("資產結構配置", expanded=True):
                   pct_tw_s * r_tw_stock + pct_tw_e * r_tw_etf) / 100
     st.caption(f"推論實質報酬率：**{inferred_r:.1f}%**（加權平均）")
 
-with st.sidebar.expander("報酬與通膨", expanded=True):
-    inflation_pct = st.slider(
-        "預期通膨率 CPI (%)",
-        min_value=0.0,
-        max_value=8.0,
-        value=2.0,
-        step=0.5,
-        help="預期年通膨率，可參考主計總處與高齡家庭 CPI（台灣近年約 1.5%～2%）",
-    )
-    use_inferred_r = st.radio(
-        "實質報酬率 r 來源",
-        ["依資產結構推論", "手動設定"],
-        index=0,
-        help="推論值由上方的資產結構加權計算",
-    )
-    if use_inferred_r == "依資產結構推論":
-        r_pct = round(inferred_r, 1)
-    else:
-        r_pct = st.slider(
-            "預期實質報酬率 r (%)",
-            min_value=0.0,
-            max_value=15.0,
-            value=4.0,
-            step=0.5,
-            help="扣除通膨後的年化回報",
-        )
-    st.caption(f"名目報酬 ≈ **{r_pct + inflation_pct:.1f}%**（實質 {r_pct}% + 通膨 {inflation_pct}%）")
-    medical_premium = st.slider(
-        "醫療溢價 i_m (CPI + %)",
-        min_value=0.0,
-        max_value=4.0,
-        value=1.7,
-        step=0.1,
-        help="台灣高齡家庭 CPI 長期高於整體，醫療保健權重較高，建議 1.5%～2%；預設 1.7% 符合實證",
-    )
-
-with st.sidebar.expander("年齡與集中度", expanded=True):
-    age_start = st.number_input("起始年齡 (歲)", 25, 70, 40, 1)
-    age_end = st.number_input("目標年齡 (歲)", 70, 100, 90, 1)
+# 資產結構計算完成後，填入推論報酬率
+if r_pct is None:
+    r_pct = round(inferred_r, 1)
+st.sidebar.caption(f"名目報酬 ≈ **{r_pct + inflation_pct:.1f}%**（實質 {r_pct}% + 通膨 {inflation_pct}%）")
 with st.sidebar.expander("勞保／勞退（選填）", expanded=False):
     st.caption("填寫後，從請領年齡起「實質購買力」改由勞保＋勞退支應一部分，自有資產提領減少。")
     pension_monthly_wan = st.number_input(
