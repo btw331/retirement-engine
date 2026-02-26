@@ -172,7 +172,33 @@ with st.sidebar.expander("資產結構配置", expanded=True):
         index=0,
         horizontal=True,
     )
-    r_us_stock, r_us_etf, r_tw_stock, r_tw_etf = 6.0, 5.0, 5.0, 4.0
+
+    # 三段式報酬情境預設
+    return_scenario = st.radio(
+        "報酬情境假設",
+        ["保守", "中性", "積極"],
+        index=0,
+        horizontal=True,
+        help=(
+            "保守：低於歷史均值，適合悲觀情境規劃\n"
+            "中性：約歷史均值折半，平衡考量\n"
+            "積極：接近歷史長期年化實質報酬\n\n"
+            "歷史參考：0050 名目年化約11.6%（2003-2024）；"
+            "VTI 名目年化約12.3%（近10年）；均扣除通膨後為實質報酬"
+        ),
+    )
+    _r_table = {
+        #            美股個股  美股ETF  台股個股  台股ETF
+        "保守":   (   6.0,    5.0,    5.0,    4.0),
+        "中性":   (   7.0,    6.5,    6.5,    5.5),
+        "積極":   (   9.0,    8.5,    8.5,    7.0),
+    }
+    r_us_stock, r_us_etf, r_tw_stock, r_tw_etf = _r_table[return_scenario]
+    st.caption(
+        f"各類實質報酬假設 — "
+        f"美股個股 **{r_us_stock}%** · 美股ETF **{r_us_etf}%** · "
+        f"台股個股 **{r_tw_stock}%** · 台股ETF **{r_tw_etf}%**"
+    )
 
     if asset_input_mode == "填寫實際金額 (萬)":
         amt_us_stock = st.number_input("美股個股 (萬)", min_value=0, max_value=100_000, value=0,    step=50)
@@ -320,8 +346,15 @@ with tab1:
         "假設實質報酬": [f"{r_us_stock}%", f"{r_us_etf}%", f"{r_tw_stock}%", f"{r_tw_etf}%"],
     })
     st.dataframe(df_asset, use_container_width=True, hide_index=True)
-    st.markdown(f"**推論實質報酬率**：**{inferred_r:.1f}%**（依上表占比與假設報酬加權平均。可於左側改為「手動設定」覆寫。）")
-    st.caption("台灣參照：勞動基金近 10 年名目報酬約 6%～7%，扣除通膨後實質約 4%～5%，可作保守假設參考。")
+    st.markdown(
+        f"**推論實質報酬率**：**{inferred_r:.1f}%**（依上表占比與假設報酬加權平均）　"
+        f"｜ 情境：**{return_scenario}**（可於左側切換）"
+    )
+    st.caption(
+        "歷史參考：0050 名目年化約 11.6%（2003–2024）；VTI 名目年化約 12.3%（近10年）。"
+        "扣除通膨（2%）後實質約 9–10%，保守情境約為歷史值的一半，中性約 60–65%，積極約 80%。"
+        "注意：算術加權平均略高於幾何平均（方差拖累約 0.5–1.1%），長期規劃建議偏向保守情境。"
+    )
     st.divider()
 
     # ── 壓力測試 ──
