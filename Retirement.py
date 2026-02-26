@@ -26,20 +26,31 @@ def _run_monte_carlo(A0, W0, r_mean_pct, r_std_pct,
                      n_years, strategy, pension_annual,
                      claim_age, age_start,
                      med_premium_pct=0.0,
+                     dist_mode="normal",
+                     t_df=7,
                      n_sim=10_000):
     """
-    以常態分布隨機報酬率模擬 n_sim 條路徑。
-    全部邏輯以 NumPy 向量化執行（shape = n_sim），外層只迴圈 n_years 次。
+    隨機報酬率模擬 n_sim 條路徑（NumPy 全向量化）。
+    dist_mode="normal" → 常態分布 N(r̄, σ²)
+    dist_mode="t"      → Student-t(df)，縮放後保留相同 r̄ 與 σ，但有肥尾
+                         縮放公式：r = r̄ + σ × t / √(df/(df−2))
     包含：固定提領 / 消費微笑曲線 / GK 護欄、醫療溢價指數複利、勞保補貼。
     固定隨機種子（seed=42）確保相同參數可重現。
     """
-    rng     = np.random.default_rng(seed=42)
-    r_mean  = r_mean_pct  / 100.0
-    r_std   = r_std_pct   / 100.0
+    rng      = np.random.default_rng(seed=42)
+    r_mean   = r_mean_pct / 100.0
+    r_std    = r_std_pct  / 100.0
     med_rate = med_premium_pct / 100.0
 
-    # 預先生成所有隨機報酬：shape (n_sim, n_years)
-    returns = rng.normal(r_mean, r_std, (n_sim, n_years))
+    # ── 生成報酬率矩陣：shape (n_sim, n_years) ──────────────────────────
+    if dist_mode == "t":
+        # Student-t 原始樣本的方差 = df/(df-2)，需縮放使 Var = σ²
+        # 縮放因子 = sqrt(df/(df-2))，除以此值後 Var → σ²、均值維持 r_mean
+        scale_factor = np.sqrt(t_df / (t_df - 2))
+        raw_t = rng.standard_t(df=t_df, size=(n_sim, n_years))
+        returns = r_mean + r_std * raw_t / scale_factor
+    else:
+        returns = rng.normal(r_mean, r_std, (n_sim, n_years))
 
     A         = np.full(n_sim, float(A0))       # 每條路徑的資產餘額
     alive     = np.ones(n_sim, dtype=bool)       # 尚未歸零的路徑遮罩
@@ -566,28 +577,59 @@ A_n = A₀ − W × n                                         （r = 0 時）
     # 蒙地卡羅模擬
     with st.expander("🎲 驗證 2：蒙地卡羅模擬（成功機率 & SORR 量化）", expanded=False):
         st.markdown("""
-**蒙地卡羅法**：將固定 r 改為「常態隨機報酬率」，模擬 **10,000 條**不同市場路徑，
+**蒙地卡羅法**：將固定 r 改為「隨機報酬率」，模擬 **10,000 條**不同市場路徑，
 統計「目標年齡時資產 > 0」的比例，並輸出 P10 / P50 / P90 三段分位數。
 
-此法補充確定性模型無法量化的 **SORR（序列報酬風險）**，是業界最標準的退休規劃驗證方法（FIRECalc、Portfolio Visualizer 均採此法）。
+此法補充確定性模型無法量化的 **SORR（序列報酬風險）**，是業界最標準的退休規劃驗證方法。
         """)
 
-        mc_col1, mc_col2 = st.columns([2, 1])
-        with mc_col1:
+        mc_row1_c1, mc_row1_c2, mc_row1_c3 = st.columns([2, 1, 1])
+        with mc_row1_c1:
             mc_std = st.slider(
                 "年報酬率標準差 σ (%)",
                 min_value=5.0, max_value=30.0, value=15.0, step=1.0,
                 help="股票型組合歷史波動率約 15–20%；保守組合可設 10–12%；0050/S&P500 約 18–20%",
             )
-        with mc_col2:
+        with mc_row1_c2:
+            mc_dist = st.radio(
+                "報酬率分布",
+                ["常態分布", "t 分布（肥尾）"],
+                horizontal=True,
+                help=(
+                    "常態分布：標準假設，計算快速\n"
+                    "t 分布：模擬金融市場肥尾（極端漲跌比常態更頻繁），"
+                    "破產機率通常比常態高 2–5%"
+                ),
+            )
+        with mc_row1_c3:
             mc_strategy = st.radio(
                 "模擬策略",
                 ["固定提領", "消費微笑曲線", "GK 護欄"],
                 horizontal=True,
                 help="與主引擎相同的三種策略，均包含醫療溢價及勞保補貼邏輯",
             )
+
+        mc_use_t = mc_dist == "t 分布（肥尾）"
+        mc_t_df = 7   # 預設自由度
+        if mc_use_t:
+            mc_t_df = st.slider(
+                "t 分布自由度 ν",
+                min_value=3, max_value=30, value=7, step=1,
+                help=(
+                    "ν 越小 → 尾部越肥（極端事件越多）。"
+                    "金融研究常用 ν = 5–8；ν → ∞ 趨近常態分布。"
+                    "ν < 3 時方差不存在，故限制最小值為 3。"
+                ),
+            )
+            _scale = np.sqrt(mc_t_df / (mc_t_df - 2))
+            st.caption(
+                f"縮放因子 √(ν/(ν−2)) = √({mc_t_df}/{mc_t_df-2}) = **{_scale:.4f}**　"
+                "（除以此值確保模擬的 σ 與設定值一致，均值維持 r̄）"
+            )
+
         _strat_map = {"固定提領": "fixed", "消費微笑曲線": "smile", "GK 護欄": "gk"}
-        mc_strat = _strat_map[mc_strategy]
+        mc_strat   = _strat_map[mc_strategy]
+        mc_dist_mode = "t" if mc_use_t else "normal"
 
         _t0 = time.perf_counter()
         mc_sr, mc_p10, mc_p50, mc_p90 = _run_monte_carlo(
@@ -595,9 +637,11 @@ A_n = A₀ − W × n                                         （r = 0 時）
             n_years, mc_strat,
             pension_annual, int(claim_age), age_start,
             med_premium_pct=medical_premium,
+            dist_mode=mc_dist_mode,
+            t_df=mc_t_df,
         )
         _elapsed_ms = (time.perf_counter() - _t0) * 1000
-        _from_cache = _elapsed_ms < 5.0   # 快取命中通常 < 1 ms
+        _from_cache = _elapsed_ms < 5.0
 
         mm1, mm2, mm3, mm4 = st.columns(4)
         with mm1:
@@ -617,14 +661,13 @@ A_n = A₀ − W × n                                         （r = 0 時）
         else:
             st.error(f"❌ 低成功機率（{mc_sr:.1f}%）：在大多數市場情境下資產將耗盡，強烈建議重新規劃。")
 
+        _dist_label = f"t 分布（ν={mc_t_df}）" if mc_use_t else "常態分布"
         _cache_note = "⚡ 來自快取（參數未變動）" if _from_cache else f"🔄 即時計算完成（{_elapsed_ms:.0f} ms）"
         st.caption(
             f"{_cache_note}　｜　"
-            f"參數：r̄ = {r_pct}%、σ = {mc_std}%、10,000 次模擬、{mc_strategy}、"
-            f"醫療溢價 {medical_premium}%、"
-            f"起始年齡 {age_start} 歲、目標年齡 {age_end} 歲。"
-            "　隨機種子 seed=42，相同參數結果可重現。"
-            "　注意：常態分布低估極端尾部事件，實際破產機率略高於顯示值。"
+            f"分布：{_dist_label}、σ = {mc_std}%、r̄ = {r_pct}%、10,000 次模擬、{mc_strategy}、"
+            f"醫療溢價 {medical_premium}%、起始年齡 {age_start} 歲、目標年齡 {age_end} 歲。"
+            "　seed=42 固定，相同參數可重現。"
         )
     st.divider()
 
@@ -727,18 +770,51 @@ $$A_n = A_0 - W \cdot n$$
 
 確定性模型使用固定 $r$，隱含「每年報酬率完全可預測」的假設，此假設不符合真實市場。蒙地卡羅法以**隨機報酬率**替代固定值，模擬數千條可能的市場路徑，藉此量化不確定性。
 
-#### 核心假設
+---
 
-本模型採用**對數常態近似的常態分布**：
+#### 模式 A：常態分布
 
 $$r_t \sim \mathcal{N}(\bar{r},\, \sigma^2)$$
 
-其中 $\bar{r}$ 為使用者設定的實質報酬率（即確定性模型之 r），$\sigma$ 為年報酬率標準差（波動率），由使用者以 σ 滑桿設定。
+標準假設，計算快速。已知限制：常態分布對極端尾部的機率估計偏低（低估金融危機頻率）。
+
+---
+
+#### 模式 B：Student-t 分布（肥尾修正）
+
+金融報酬的實證分布比常態更「尖峰厚尾」（leptokurtic）：極端的大漲與大跌發生頻率遠高於常態預測。本模型使用 Student-t 分布模擬此特性：
+
+$$r_t = \bar{r} + \sigma \cdot \frac{T_\nu}{\sqrt{\nu / (\nu - 2)}}, \quad T_\nu \sim t(\nu)$$
+
+**縮放修正的必要性**：
+
+標準 Student-t 分布 $T_\nu$ 的方差為 $\dfrac{\nu}{\nu-2}$（不等於 1）。若直接以 $r_t = \bar{r} + \sigma \cdot T_\nu$，模擬的實際標準差將被悄悄放大：
+
+$$\text{Var}(r_t) = \sigma^2 \cdot \frac{\nu}{\nu-2} \neq \sigma^2$$
+
+例如 $\nu = 7$：$\sqrt{7/5} \approx 1.183$，標準差被放大 **18.3%**，破產機率因此虛高。
+
+正確做法是除以縮放因子 $\sqrt{\nu/(\nu-2)}$，使模擬標準差精確等於 σ，同時保留 t 分布的肥尾形狀：
+
+$$\text{scale\_factor} = \sqrt{\frac{\nu}{\nu - 2}}$$
+
+| $\nu$ | scale\_factor | 形狀描述 |
+|---|---|---|
+| 3 | 1.732 | 極度肥尾，尾部事件非常頻繁 |
+| 5 | 1.291 | 重度肥尾，金融危機情境 |
+| 7 | 1.183 | 中度肥尾（**本模型預設**，文獻常用值）|
+| 15 | 1.036 | 輕度肥尾 |
+| 30 | 1.017 | 接近常態分布 |
+| ∞ | 1.000 | 退化為常態分布 |
+
+**注意**：$\nu \geq 3$ 才能保證方差存在（$\nu < 3$ 時 $E[T^2] = \infty$），故自由度滑桿最小值設為 3。
+
+---
 
 #### 模擬步驟
 
 1. 以固定隨機種子（seed=42）預生成 $10{,}000 \times n$ 個報酬率隨機數，shape = $(n_{sim},\, n_{years})$
-2. 每條路徑獨立執行動態引擎，遵循與確定性模型相同的提領邏輯（含 GK 護欄、勞保補貼）
+2. 每條路徑獨立執行動態引擎，邏輯與確定性模型相同（含 GK 護欄、醫療溢價、勞保補貼）
 3. 記錄每條路徑的終值 $A_n^{(i)}$
 4. 統計輸出：
 
@@ -749,15 +825,13 @@ $$r_t \sim \mathcal{N}(\bar{r},\, \sigma^2)$$
 | **P50** | $\text{Quantile}_{50\%}(A_n^{(i)})$ ── 中位數 |
 | **P90** | $\text{Quantile}_{90\%}(A_n^{(i)})$ ── 樂觀情境 |
 
-#### 與確定性模型的關係
+---
 
-$$\text{確定性終值} \approx P50_{\text{MC}}（當} \sigma \to 0\text{時相等）$$
-
-當 $\sigma > 0$ 時，由於**方差拖累（Variance Drag）**，蒙地卡羅中位數將略低於確定性終值：
+#### 方差拖累（Variance Drag）
 
 $$\text{幾何平均} \approx \bar{r} - \frac{\sigma^2}{2}$$
 
-例如：$\bar{r} = 6\%$，$\sigma = 18\%$，方差拖累 $\approx \frac{0.18^2}{2} = 1.62\%$，實質幾何均值降至約 $4.38\%$。
+例如：$\bar{r} = 6\%$，$\sigma = 18\%$，方差拖累 $\approx 1.62\%$，實質幾何均值降至約 $4.38\%$。確定性模型使用算術平均 $\bar{r}$，蒙地卡羅 P50 因此略低於確定性終值。
 
 #### 參考波動率設定
 
@@ -768,13 +842,12 @@ $$\text{幾何平均} \approx \bar{r} - \frac{\sigma^2}{2}$$
 | 保守（股四債六） | 8–12% |
 | 台股 0050 歷史實測 | ≈ 20%（2003–2024） |
 
-#### 限制
+#### 剩餘限制
 
-- 常態分布**低估極端事件（厚尾 / fat-tail）**，實際破產風險略高於顯示值
-- 未模擬序列相關性（returns autocorrelation），景氣循環中報酬率並非嚴格 i.i.d.
+- 未模擬序列相關性（報酬率非嚴格 i.i.d.，景氣循環中存在動能效應）
 - 若需更嚴謹的歷史分布，建議改用 Bootstrap 重抽樣法（以實際歷史年報酬序列抽樣）
 
-**文獻**：Pfau, W. D. (2012). *An efficient frontier for retirement income.* Journal of Financial Planning.
+**文獻**：Pfau, W. D. (2012). *An efficient frontier for retirement income.* Journal of Financial Planning.；Rachev, S. T. et al. (2005). *Fat-tailed and skewed asset return distributions.* Wiley.
         """)
 
     with st.expander("參考文獻與資料來源", expanded=False):
