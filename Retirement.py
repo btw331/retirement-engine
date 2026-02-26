@@ -633,11 +633,111 @@ A_n = A₀ − W × n                                         （r = 0 時）
 - **勞保老年給付**：年資 15 年以上可領年金，請領年齡逐步延後至 65 歲；與勞退可同時請領。
 - **試算邏輯**：左側填寫「勞保＋勞退 月領」與「請領年齡」後，從該年齡起「實質購買力」改由勞保勞退支應一部分，**從自有資產提領** = 實質購買力 − 勞保勞退年額；IWR 與 GK 護欄皆以「從資產提領」為準。
         """)
+    with st.expander("封閉公式驗算：確定性引擎精度測試", expanded=False):
+        st.markdown(r"""
+### 方法論
+
+固定提領（期初提領、年複利）在報酬率與提領額均為常數時，具備精確的解析解，可作為動態引擎的「黃金標準」對照。
+
+#### 推導過程
+
+設初始資產為 $A_0$，每期固定提領 $W$，實質報酬率為 $r$，第 $k$ 期結束時資產為 $A_k$。
+
+每期遞推關係（期初提領）：
+
+$$A_k = (A_{k-1} - W)(1+r)$$
+
+展開至第 $n$ 期：
+
+$$A_n = (A_0 - W)(1+r)^n - W\bigl[(1+r)^{n-1} + (1+r)^{n-2} + \cdots + (1+r)\bigr]$$
+
+等比級數求和（$r \neq 0$）：
+
+$$\boxed{A_n = (A_0 - W)(1+r)^n - W \cdot \frac{(1+r)^n - (1+r)}{r}}$$
+
+當 $r = 0$ 時退化為：
+
+$$A_n = A_0 - W \cdot n$$
+
+#### 使用方式
+
+將模型當前的 $A_0$、$W$、$r$、$n$ 代入公式，與動態引擎輸出比對，若誤差 $< 0.001\%$ 則確認引擎計算邏輯正確。
+
+#### 適用範圍與限制
+
+| 條件 | 說明 |
+|---|---|
+| ✅ 固定提領 (strategy=fixed) | 精確成立 |
+| ❌ 消費微笑曲線 | 每期 W 動態改變，無封閉解 |
+| ❌ GK 護欄策略 | 護欄觸發邏輯為條件式非線性，無封閉解 |
+| ⚠️ 含勞保補貼 | 補貼使每期實際扣款 ≠ 常數，公式不適用，驗算時設 pension=0 |
+
+此方法可驗證**引擎計算邏輯是否正確**，但無法評估市場假設是否合理，後者需蒙地卡羅法補充。
+        """)
+
+    with st.expander("蒙地卡羅模擬：隨機路徑與成功機率估算", expanded=False):
+        st.markdown(r"""
+### 方法論
+
+確定性模型使用固定 $r$，隱含「每年報酬率完全可預測」的假設，此假設不符合真實市場。蒙地卡羅法以**隨機報酬率**替代固定值，模擬數千條可能的市場路徑，藉此量化不確定性。
+
+#### 核心假設
+
+本模型採用**對數常態近似的常態分布**：
+
+$$r_t \sim \mathcal{N}(\bar{r},\, \sigma^2)$$
+
+其中 $\bar{r}$ 為使用者設定的實質報酬率（即確定性模型之 r），$\sigma$ 為年報酬率標準差（波動率），由使用者以 σ 滑桿設定。
+
+#### 模擬步驟
+
+1. 以固定隨機種子（seed=42）預生成 $10{,}000 \times n$ 個報酬率隨機數，shape = $(n_{sim},\, n_{years})$
+2. 每條路徑獨立執行動態引擎，遵循與確定性模型相同的提領邏輯（含 GK 護欄、勞保補貼）
+3. 記錄每條路徑的終值 $A_n^{(i)}$
+4. 統計輸出：
+
+| 指標 | 定義 |
+|---|---|
+| **成功率** | $P(A_n > 0)$ |
+| **P10** | $\text{Quantile}_{10\%}(A_n^{(i)})$ ── 悲觀情境 |
+| **P50** | $\text{Quantile}_{50\%}(A_n^{(i)})$ ── 中位數 |
+| **P90** | $\text{Quantile}_{90\%}(A_n^{(i)})$ ── 樂觀情境 |
+
+#### 與確定性模型的關係
+
+$$\text{確定性終值} \approx P50_{\text{MC}}（當} \sigma \to 0\text{時相等）$$
+
+當 $\sigma > 0$ 時，由於**方差拖累（Variance Drag）**，蒙地卡羅中位數將略低於確定性終值：
+
+$$\text{幾何平均} \approx \bar{r} - \frac{\sigma^2}{2}$$
+
+例如：$\bar{r} = 6\%$，$\sigma = 18\%$，方差拖累 $\approx \frac{0.18^2}{2} = 1.62\%$，實質幾何均值降至約 $4.38\%$。
+
+#### 參考波動率設定
+
+| 組合類型 | 建議 σ |
+|---|---|
+| 全股票（台股/美股 ETF） | 18–22% |
+| 股六債四 | 12–15% |
+| 保守（股四債六） | 8–12% |
+| 台股 0050 歷史實測 | ≈ 20%（2003–2024） |
+
+#### 限制
+
+- 常態分布**低估極端事件（厚尾 / fat-tail）**，實際破產風險略高於顯示值
+- 未模擬序列相關性（returns autocorrelation），景氣循環中報酬率並非嚴格 i.i.d.
+- 若需更嚴謹的歷史分布，建議改用 Bootstrap 重抽樣法（以實際歷史年報酬序列抽樣）
+
+**文獻**：Pfau, W. D. (2012). *An efficient frontier for retirement income.* Journal of Financial Planning.
+        """)
+
     with st.expander("參考文獻與資料來源", expanded=False):
         st.markdown("""
 - Guyton, J. T., & Klinger, W. J. (2006). *Decision rules and portfolio management for retirees.* Journal of Financial Planning.
 - Blanchett, D. (2014). *Exploring the retirement consumption puzzle.* Journal of Financial Planning.
+- Pfau, W. D. (2012). *An efficient frontier for retirement income.* Journal of Financial Planning.
 - Morningstar: State of Retirement Income 2025 (2025/12/3).
+- Bengen, W. P. (1994). *Determining withdrawal rates using historical data.* Journal of Financial Planning.
 - NBLM 退休模型庫。
         """)
 
