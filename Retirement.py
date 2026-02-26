@@ -6,6 +6,65 @@ Streamlit 版：精簡排版、學術說明、可調邊界條件
 
 import streamlit as st
 import pandas as pd
+import numpy as np
+
+# ── 封閉公式解析解（用於驗算 strategy="fixed" 引擎精度）──────────────
+def _analytical_fixed(A0, W, r, n):
+    """
+    固定提領期初扣款封閉解：
+    每期 A = (A - W) × (1+r)，n 期後精確終值。
+    """
+    if r == 0:
+        return max(0.0, A0 - W * n)
+    val = (A0 - W) * (1 + r) ** n - W * ((1 + r) ** n - (1 + r)) / r
+    return max(0.0, val)
+
+# ── 蒙地卡羅核心（st.cache_data 加速重複計算）─────────────────────────
+@st.cache_data
+def _run_monte_carlo(A0, W0, r_mean_pct, r_std_pct,
+                     n_years, strategy, pension_annual,
+                     claim_age, age_start, n_sim=10_000):
+    """
+    以常態分布隨機報酬率跑 n_sim 條路徑，回傳成功率與分位數。
+    固定隨機種子（seed=42）確保可重現。
+    """
+    rng = np.random.default_rng(seed=42)
+    r_mean = r_mean_pct / 100
+    r_std  = r_std_pct  / 100
+    # 預先生成所有隨機報酬：shape (n_sim, n_years)
+    returns = rng.normal(r_mean, r_std, (n_sim, n_years))
+
+    finals = np.zeros(n_sim)
+    IWR = W0 / A0 if A0 > 0 else 0.0
+
+    for i in range(n_sim):
+        A = float(A0)
+        gk_spend = float(W0)
+        for j in range(n_years):
+            if A <= 0:
+                break
+            current_age = age_start + j
+            pension_income = (pension_annual
+                              if pension_annual > 0 and current_age >= claim_age
+                              else 0.0)
+            if strategy == "gk":
+                cur_wr = gk_spend / A if A > 0 else 999.0
+                if cur_wr < IWR * 0.8:
+                    gk_spend *= 1.1
+                elif cur_wr > IWR * 1.2:
+                    gk_spend *= 0.9
+                spend = gk_spend
+            else:
+                spend = W0
+            spend_from_asset = max(0.0, spend - pension_income)
+            A = (A - spend_from_asset) * (1 + returns[i, j])
+        finals[i] = max(0.0, A)
+
+    success_rate = float((finals > 0).mean() * 100)
+    p10 = float(np.percentile(finals, 10))
+    p50 = float(np.percentile(finals, 50))
+    p90 = float(np.percentile(finals, 90))
+    return success_rate, p10, p50, p90
 
 def _fmt_asset(x):
     """將 NTD 金額格式化為 萬/億（金融顯示：千分位）或 歸零"""
@@ -430,6 +489,97 @@ with tab1:
     df_risk = pd.DataFrame(scenarios, columns=["情境", "假設", "預估影響", "90歲剩餘資產（括號=約當2026年可提領/年）"])
     st.dataframe(df_risk, use_container_width=True, hide_index=True)
     st.caption("格式：剩餘資產 (→ 約當2026年可提領額)。GK 護欄 + 指數複利醫療溢價；建議搭配流動性緩衝因應最壞情境。")
+    st.divider()
+
+    # ── 模型驗證 ──
+    st.subheader("模型驗證")
+
+    # 封閉公式驗算
+    with st.expander("🔬 驗證 1：封閉公式對照（引擎精度檢查）", expanded=False):
+        st.markdown("""
+**固定提領（strategy=fixed）** 具備精確解析解，可驗算動態引擎的浮點誤差：
+
+```
+A_n = (A₀ − W) × (1+r)ⁿ − W × [(1+r)ⁿ − (1+r)] / r   （期初提領，r ≠ 0）
+A_n = A₀ − W × n                                         （r = 0 時）
+```
+        """)
+        _sim_val = run_dynamic_projection(A0, W0, r_pct, n_years, age_start,
+                                          strategy="fixed",
+                                          pension_annual=0, claim_age=int(claim_age))
+        _ana_val = _analytical_fixed(A0, W0, r_pct / 100, n_years)
+        _err_abs = abs(_sim_val - _ana_val)
+        _err_pct = (_err_abs / _ana_val * 100) if _ana_val > 0 else 0.0
+
+        vc1, vc2, vc3 = st.columns(3)
+        with vc1:
+            st.metric("動態引擎輸出", _fmt_asset(_sim_val))
+        with vc2:
+            st.metric("封閉公式解", _fmt_asset(_ana_val))
+        with vc3:
+            st.metric("計算誤差", f"{_err_pct:.8f}%")
+
+        if _err_pct < 0.001:
+            st.success(f"✅ 驗算通過：誤差 {_err_pct:.2e}%，引擎計算邏輯正確。")
+        else:
+            st.error(f"⚠️ 誤差 {_err_pct:.4f}%，超過容許值，請檢查引擎邏輯。")
+        st.caption(
+            "注意：此驗算不含勞保/勞退補貼（pension_annual=0）以確保公式成立。"
+            "消費微笑曲線與 GK 護欄為非線性動態模型，無封閉解，請用下方蒙地卡羅驗證。"
+        )
+
+    # 蒙地卡羅模擬
+    with st.expander("🎲 驗證 2：蒙地卡羅模擬（成功機率 & SORR 量化）", expanded=False):
+        st.markdown("""
+**蒙地卡羅法**：將固定 r 改為「常態隨機報酬率」，模擬 **10,000 條**不同市場路徑，
+統計「目標年齡時資產 > 0」的比例，並輸出 P10 / P50 / P90 三段分位數。
+
+此法補充確定性模型無法量化的 **SORR（序列報酬風險）**，是業界最標準的退休規劃驗證方法（FIRECalc、Portfolio Visualizer 均採此法）。
+        """)
+
+        mc_col1, mc_col2 = st.columns([2, 1])
+        with mc_col1:
+            mc_std = st.slider(
+                "年報酬率標準差 σ (%)",
+                min_value=5.0, max_value=30.0, value=15.0, step=1.0,
+                help="股票型組合歷史波動率約 15–20%；保守組合可設 10–12%；0050/S&P500 約 18–20%",
+            )
+        with mc_col2:
+            mc_strategy = st.radio("模擬策略", ["固定提領", "GK 護欄"], horizontal=True)
+        mc_strat = "gk" if mc_strategy == "GK 護欄" else "fixed"
+
+        with st.spinner("模擬中（10,000 次隨機路徑）…"):
+            mc_sr, mc_p10, mc_p50, mc_p90 = _run_monte_carlo(
+                A0, W0, r_pct, mc_std,
+                n_years, mc_strat,
+                pension_annual, int(claim_age), age_start,
+            )
+
+        mm1, mm2, mm3, mm4 = st.columns(4)
+        with mm1:
+            delta_color = "normal" if mc_sr >= 90 else ("off" if mc_sr >= 75 else "inverse")
+            st.metric("成功機率", f"{mc_sr:.1f}%",
+                      "≥90% 為安全" if mc_sr >= 90 else ("75–90% 需注意" if mc_sr >= 75 else "< 75% 危險"))
+        with mm2:
+            st.metric("悲觀結果 P10", _fmt_asset(mc_p10), "最差10%情境")
+        with mm3:
+            st.metric("中位數 P50", _fmt_asset(mc_p50), "典型情境")
+        with mm4:
+            st.metric("樂觀結果 P90", _fmt_asset(mc_p90), "最佳10%情境")
+
+        if mc_sr >= 90:
+            st.success(f"✅ 高成功機率（{mc_sr:.1f}%）：10,000 條路徑中超過 90% 可支撐至 {age_end} 歲。")
+        elif mc_sr >= 75:
+            st.warning(f"⚠️ 中等成功機率（{mc_sr:.1f}%）：建議降低提領率、增加初始資產，或切換為 GK 護欄策略。")
+        else:
+            st.error(f"❌ 低成功機率（{mc_sr:.1f}%）：在大多數市場情境下資產將耗盡，強烈建議重新規劃。")
+
+        st.caption(
+            f"參數：r̄ = {r_pct}%、σ = {mc_std}%、10,000 次模擬、{mc_strategy}、"
+            f"起始年齡 {age_start} 歲、目標年齡 {age_end} 歲。"
+            "隨機種子 seed=42 固定，確保相同參數下結果可重現。"
+            "注意：此模擬採簡化常態分布，未含左偏厚尾（fat-tail），實際破產風險略高於顯示值。"
+        )
     st.divider()
 
     # ── 學術背景說明 ──
