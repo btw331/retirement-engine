@@ -318,23 +318,25 @@ with tab1:
         run_dynamic_projection(A0, W0, r_high, n_years, age_start, strategy="gk",    **_kw),
     ]
     def _fmt_pwr(x):
-        """剩餘資產 × 4% 提領率 → 年可提領額（2026 實質購買力）"""
+        """剩餘資產 × 4% → 年可提領額（2026 實質購買力）"""
         if x is None or x <= 0:
             return "歸零"
-        annual = x * 0.04
-        return f"{annual/1e4:,.0f} 萬/年"
+        return f"{x * 0.04 / 1e4:,.0f} 萬/年"
+
+    def _fmt_cell(x):
+        """合併顯示：剩餘資產 + 約當年購買力"""
+        if x is None or x <= 0:
+            return "歸零"
+        return f"{_fmt_asset(x)}  (→ {_fmt_pwr(x)})"
 
     matrix_a = pd.DataFrame({
         "策略": ["固定提領 (實質購買力/年)", "消費微笑曲線", "GK 護欄"],
-        f"實質 {r_low}% (悲觀)": [_fmt_asset(x) for x in col_low],
-        f"約當購買力 (悲觀)": [_fmt_pwr(x) for x in col_low],
-        f"實質 {r_mid}% (基準)": [_fmt_asset(x) for x in col_mid],
-        f"約當購買力 (基準)": [_fmt_pwr(x) for x in col_mid],
-        f"實質 {r_high}% (樂觀)": [_fmt_asset(x) for x in col_high],
-        f"約當購買力 (樂觀)": [_fmt_pwr(x) for x in col_high],
+        f"悲觀  實質 {r_low}%": [_fmt_cell(x) for x in col_low],
+        f"基準  實質 {r_mid}%": [_fmt_cell(x) for x in col_mid],
+        f"樂觀  實質 {r_high}%": [_fmt_cell(x) for x in col_high],
     })
     st.dataframe(matrix_a, use_container_width=True, hide_index=True)
-    st.caption("「約當購買力」= 90歲剩餘資產 × 4%提領率，代表彼時每年可持續支出（以 2026 實質購買力計，模型採實質報酬率，已自動扣除通膨）。V2.0 引擎：消費微笑曲線三段式、期初提領保守原則。")
+    st.caption("格式：剩餘資產 (→ 約當2026年可提領額)。約當購買力 = 剩餘資產 × 4%提領率，模型採實質報酬率故已自動扣除通膨。V2.0 引擎：消費微笑曲線三段式、期初提領保守原則。")
 
     st.subheader("多重風險疊加情境")
     r_down = max(0, r_pct - 1)
@@ -344,18 +346,26 @@ with tab1:
     res_med   = run_dynamic_projection(A0, W0, r_pct,  n_years, age_start, med_premium_pct=medical_premium + 0.5, **_kw_med)
     res_multi = run_dynamic_projection(A0, W0, r_down, n_years, age_start, med_premium_pct=medical_premium + 0.5, **_kw_med)
     scenarios = [
-        ("基準",         f"實質報酬 {r_pct}%、通膨 {inflation_pct}%、醫療溢價 CPI+{medical_premium}%",
-         "依目前參數之基準路徑",   _fmt_asset(res_base),  _fmt_pwr(res_base)),
-        ("通膨/報酬下修", f"實質報酬 {r_pct}% → {r_down:.1f}%",
-         "購買力侵蝕或市場低迷，複利減弱",                    _fmt_asset(res_inf),   _fmt_pwr(res_inf)),
-        ("醫療溢價激增",  f"醫療溢價 CPI+{medical_premium}% → +{medical_premium + 0.5:.1f}%",
-         "晚年護理支出非線性飆升（指數複利疊加）",             _fmt_asset(res_med),   _fmt_pwr(res_med)),
-        ("多重風險疊加",  "報酬-1% 且 醫療溢價+0.5% 同時發生",
-         "最壞情境，GK 護欄極限抗壓能力測試",                _fmt_asset(res_multi), _fmt_pwr(res_multi)),
+        ("基準",
+         f"實質報酬 {r_pct}%、通膨 {inflation_pct}%、醫療溢價 CPI+{medical_premium}%",
+         "依目前參數之基準路徑",
+         _fmt_cell(res_base)),
+        ("通膨/報酬下修",
+         f"實質報酬 {r_pct}% → {r_down:.1f}%",
+         "購買力侵蝕或市場低迷，複利減弱",
+         _fmt_cell(res_inf)),
+        ("醫療溢價激增",
+         f"醫療溢價 CPI+{medical_premium}% → +{medical_premium + 0.5:.1f}%",
+         "晚年護理支出非線性飆升（指數複利疊加）",
+         _fmt_cell(res_med)),
+        ("多重風險疊加",
+         "報酬-1% 且 醫療溢價+0.5% 同時發生",
+         "最壞情境，GK 護欄極限抗壓能力測試",
+         _fmt_cell(res_multi)),
     ]
-    df_risk = pd.DataFrame(scenarios, columns=["情境", "假設", "預估影響", "90歲剩餘資產 (GK)", "約當2026購買力（年可提領）"])
+    df_risk = pd.DataFrame(scenarios, columns=["情境", "假設", "預估影響", "90歲剩餘資產 (→ 約當年可提領)"])
     st.dataframe(df_risk, use_container_width=True, hide_index=True)
-    st.caption("「約當2026購買力」= 剩餘資產 × 4%提領率，代表 90 歲時每年可持續支出（2026 實質）。醫療溢價採指數複利計算；建議搭配流動性緩衝因應最壞情境。")
+    st.caption("格式：剩餘資產 (→ 約當2026年可提領額)。GK 護欄 + 指數複利醫療溢價；建議搭配流動性緩衝因應最壞情境。")
     st.divider()
 
     # ── 學術背景說明 ──
