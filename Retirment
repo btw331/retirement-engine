@@ -215,7 +215,7 @@ gk_upper = IWR * 1.2   # 保全護欄
 
 # ========== 主區：標題與即時摘要 ==========
 st.title("退休規劃大師")
-st.caption("50 年長週期退休財務工程與資產動態管理 (2026–2076) · 金額以 2026 實質購買力計價，已預扣 3% 通膨")
+st.caption(f"50 年長週期退休財務工程與資產動態管理 (2026–2076) · 金額以 2026 實質購買力計價，預設通膨 {inflation_pct}%")
 
 col1, col2, col3, col4 = st.columns(4)
 with col1:
@@ -249,15 +249,29 @@ st.divider()
 # ========== 區塊一：執行摘要 ==========
 with st.container():
     st.subheader("執行摘要")
-    st.markdown("""
-    - **系統屬性**：初始提領率 **{:.2f}%**，{}學界公認的 4% 安全閾值；在實質報酬率 ≥2% 的所有壓力測試路徑中，破產機率為 **0%**。
-    - **策略重心移轉**：在目前邊界條件下，系統已達「**財務熱力學溢位**」——核心威脅由「生存風險（錢不夠花）」轉向「資本效率低下（無效資產堆積）」。
-    - **核心建議**：導入 **蓋頓–克林格 (GK) 護欄策略**，以負回饋調節在資產增值時觸發繁榮法則、強制加薪，將複利轉化為高品質生命體驗與生物資本投資。
+    # 動態安全等級判斷
+    if IWR < 2.0:
+        safety_label = "遠低於"
+        safety_note  = "系統具備**財務熱力學溢位**：核心威脅已由「生存風險」轉向「資本效率低下（無效資產堆積）」，規劃重心應移往消費優化。"
+    elif IWR < 4.0:
+        safety_label = "低於"
+        safety_note  = "系統處於**安全區**：具備一定緩衝空間，建議以 GK 護欄動態管理提領，避免過度保守導致晚年資源閒置。"
+    else:
+        safety_label = "接近或超過"
+        safety_note  = "系統處於**臨界區或危險區**：IWR 達到或超過 4% 安全閾值，退休初期若遇市場低迷（SORR），路徑崩潰風險顯著上升，強烈建議提高準備金或降低提領。"
+
+    # 閉合公式驗算資產均衡點（期初提領）
+    A_star = (W0 * (1 + r_pct / 100) / (r_pct / 100)) if r_pct > 0 else float("inf")
+    survivability = "✅ 在目前報酬率下資產均衡點 **{:.0f} 萬** 高於初始資產，系統能長期維持（確定性路徑）。".format(A_star / 1e4) \
+                    if A_star > A0 else \
+                    "⚠️ 資產均衡點 **{:.0f} 萬** 低於初始資產，固定提領在目前報酬率下資產將逐漸耗盡；建議採用 GK 護欄或提高報酬率假設。".format(A_star / 1e4)
+
+    st.markdown(f"""
+    - **系統屬性**：初始提領率 **{IWR:.2f}%**，{safety_label}學界公認的 4% 安全閾值。{safety_note}
+    - **核心建議**：採用 **蓋頓–克林格 (GK) 護欄策略**，以負回饋調節在資產增值時觸發繁榮法則、強制加薪，將複利轉化為高品質生命體驗與生物資本投資。
+    - **數學驗算**：{survivability}
     - **風險**：建議未來每月儲蓄可全數配置全球分散型 ETF（如 VWRA），以「地理熵減」應對地緣風險。
-    """.format(
-        IWR,
-        "遠低於 " if IWR < 4 else "接近或高於 ",
-    ).strip())
+    """.strip())
     st.info("**台灣情境提醒**：退休年齡越早、規劃年數越長，4% 法則風險越高。50 歲前退休建議提高準備金或降低提領率，並以蒙地卡羅評估「成功機率」。")
     st.divider()
 
@@ -361,10 +375,10 @@ with st.expander("蓋頓–克林格 (GK) 護欄策略", expanded=False):
     **文獻**：Guyton & Klinger (2006).
     """.format(
         gk_lower,
-        _fmt_wan(W0_asset / (gk_lower / 100)),
+        _fmt_wan(W0_asset / (gk_lower / 100)) if gk_lower > 0 else "—（IWR 為 0）",
         _fmt_wan(trigger_raise),
         gk_upper,
-        _fmt_wan(W0_asset / (gk_upper / 100)),
+        _fmt_wan(W0_asset / (gk_upper / 100)) if gk_upper > 0 else "—（IWR 為 0）",
         _fmt_wan(trigger_cut),
     ))
 with st.expander("序列報酬風險 (SORR) 與提領風險", expanded=False):
