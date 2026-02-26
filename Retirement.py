@@ -125,24 +125,46 @@ with st.sidebar.expander("資產與提領", expanded=True):
     A0 = A0_wan * 10_000
     W0 = W0_wan * 10_000
 
-# 資產結構：四類占比（%），用於推論實質報酬率
+# 資產結構：支援「金額」或「百分比」兩種輸入模式
 with st.sidebar.expander("資產結構配置", expanded=True):
-    pct_us_stock = st.slider("美股個股 (%)", 0, 100, 0, 5)
-    pct_us_etf = st.slider("美股 ETF (%)", 0, 100, 20, 5)
-    pct_tw_stock = st.slider("台股個股 (%)", 0, 100, 30, 5)
-    pct_tw_etf = st.slider("台股 ETF (%)", 0, 100, 50, 5)
-    total_pct = pct_us_stock + pct_us_etf + pct_tw_stock + pct_tw_etf
-    if total_pct != 100:
-        st.caption(f"⚠️ 目前加總 {total_pct}%，建議為 100%。以下推論依比例換算。")
-    # 換算為 100% 的占比
-    scale = 100 / total_pct if total_pct > 0 else 1
-    pct_us_s = pct_us_stock * scale
-    pct_us_e = pct_us_etf * scale
-    pct_tw_s = pct_tw_stock * scale
-    pct_tw_e = pct_tw_etf * scale
-    # 各類假設實質報酬（保守估計）：美股個股 6%, 美股ETF 5%, 台股個股 5%, 台股ETF 4%
+    asset_input_mode = st.radio(
+        "輸入方式",
+        ["填寫實際金額 (萬)", "填寫比例 (%)"],
+        index=0,
+        horizontal=True,
+    )
     r_us_stock, r_us_etf, r_tw_stock, r_tw_etf = 6.0, 5.0, 5.0, 4.0
-    inferred_r = (pct_us_s * r_us_stock + pct_us_e * r_us_etf + pct_tw_s * r_tw_stock + pct_tw_e * r_tw_etf) / 100
+
+    if asset_input_mode == "填寫實際金額 (萬)":
+        amt_us_stock = st.number_input("美股個股 (萬)", min_value=0, max_value=100_000, value=0,    step=50)
+        amt_us_etf   = st.number_input("美股 ETF  (萬)", min_value=0, max_value=100_000, value=600,  step=50)
+        amt_tw_stock = st.number_input("台股個股 (萬)", min_value=0, max_value=100_000, value=900,  step=50)
+        amt_tw_etf   = st.number_input("台股 ETF  (萬)", min_value=0, max_value=100_000, value=1500, step=50)
+        total_amt = amt_us_stock + amt_us_etf + amt_tw_stock + amt_tw_etf
+        if total_amt > 0:
+            pct_us_s = amt_us_stock / total_amt * 100
+            pct_us_e = amt_us_etf   / total_amt * 100
+            pct_tw_s = amt_tw_stock / total_amt * 100
+            pct_tw_e = amt_tw_etf   / total_amt * 100
+        else:
+            pct_us_s = pct_us_e = pct_tw_s = pct_tw_e = 25.0
+        st.caption(f"合計：**{total_amt:,} 萬**（A₀ 以上方「初始資產」為準）")
+    else:
+        pct_us_stock = st.slider("美股個股 (%)", 0, 100, 0,  5)
+        pct_us_etf   = st.slider("美股 ETF  (%)", 0, 100, 20, 5)
+        pct_tw_stock = st.slider("台股個股 (%)", 0, 100, 30, 5)
+        pct_tw_etf   = st.slider("台股 ETF  (%)", 0, 100, 50, 5)
+        total_pct = pct_us_stock + pct_us_etf + pct_tw_stock + pct_tw_etf
+        if total_pct != 100:
+            st.caption(f"⚠️ 目前加總 {total_pct}%，建議為 100%。以下推論依比例換算。")
+        scale = 100 / total_pct if total_pct > 0 else 1
+        pct_us_s = pct_us_stock * scale
+        pct_us_e = pct_us_etf   * scale
+        pct_tw_s = pct_tw_stock * scale
+        pct_tw_e = pct_tw_etf   * scale
+
+    inferred_r = (pct_us_s * r_us_stock + pct_us_e * r_us_etf +
+                  pct_tw_s * r_tw_stock + pct_tw_e * r_tw_etf) / 100
     st.caption(f"推論實質報酬率：**{inferred_r:.1f}%**（加權平均）")
 
 with st.sidebar.expander("報酬與通膨", expanded=True):
@@ -277,15 +299,20 @@ with tab1:
 
     # ── 資產結構 ──
     st.subheader("資產結構現況")
+    if asset_input_mode == "填寫實際金額 (萬)":
+        _amts = [amt_us_stock, amt_us_etf, amt_tw_stock, amt_tw_etf]
+        _amt_col = [f"{v:,} 萬" for v in _amts]
+    else:
+        _amt_col = [
+            f"{A0 * pct_us_s / 100 / 10_000:,.1f} 萬",
+            f"{A0 * pct_us_e / 100 / 10_000:,.1f} 萬",
+            f"{A0 * pct_tw_s / 100 / 10_000:,.1f} 萬",
+            f"{A0 * pct_tw_e / 100 / 10_000:,.1f} 萬",
+        ]
     df_asset = pd.DataFrame({
         "類別": ["美股個股", "美股 ETF", "台股個股", "台股 ETF"],
+        "實際金額": _amt_col,
         "佔比 (%)": [round(pct_us_s, 1), round(pct_us_e, 1), round(pct_tw_s, 1), round(pct_tw_e, 1)],
-        "約當金額 (萬 NTD)": [
-            f"{A0 * pct_us_s / 100 / 10_000:,.1f}",
-            f"{A0 * pct_us_e / 100 / 10_000:,.1f}",
-            f"{A0 * pct_tw_s / 100 / 10_000:,.1f}",
-            f"{A0 * pct_tw_e / 100 / 10_000:,.1f}",
-        ],
         "假設實質報酬": [f"{r_us_stock}%", f"{r_us_etf}%", f"{r_tw_stock}%", f"{r_tw_etf}%"],
     })
     st.dataframe(df_asset, use_container_width=True, hide_index=True)
@@ -329,14 +356,14 @@ with tab1:
             return "歸零"
         return f"{_fmt_asset(x)}  (→ {_fmt_pwr(x)})"
 
+    st.caption("格式說明：各格顯示「**90歲剩餘資產**（→ 約當2026年可提領額/年）」，括號內 = 剩餘資產 × 4%，代表彼時每年可持續支出的生活費（2026實質購買力）。")
     matrix_a = pd.DataFrame({
         "策略": ["固定提領 (實質購買力/年)", "消費微笑曲線", "GK 護欄"],
-        f"悲觀  實質 {r_low}%": [_fmt_cell(x) for x in col_low],
-        f"基準  實質 {r_mid}%": [_fmt_cell(x) for x in col_mid],
-        f"樂觀  實質 {r_high}%": [_fmt_cell(x) for x in col_high],
+        f"悲觀｜實質 {r_low}%": [_fmt_cell(x) for x in col_low],
+        f"基準｜實質 {r_mid}%": [_fmt_cell(x) for x in col_mid],
+        f"樂觀｜實質 {r_high}%": [_fmt_cell(x) for x in col_high],
     })
     st.dataframe(matrix_a, use_container_width=True, hide_index=True)
-    st.caption("格式：剩餘資產 (→ 約當2026年可提領額)。約當購買力 = 剩餘資產 × 4%提領率，模型採實質報酬率故已自動扣除通膨。V2.0 引擎：消費微笑曲線三段式、期初提領保守原則。")
 
     st.subheader("多重風險疊加情境")
     r_down = max(0, r_pct - 1)
