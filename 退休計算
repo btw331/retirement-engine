@@ -27,79 +27,71 @@ def _fmt_currency(n):
         return "0"
     return f"{int(n):,}"
 
-def project_fixed(A0, W0, r_pct, n_years):
-    """固定實質提領：每年 A = A*(1+r) - W0（實質）"""
-    A, r = float(A0), r_pct / 100
-    for _ in range(n_years):
-        A = A * (1 + r) - W0
+def run_dynamic_projection(
+    A0, W0, r_pct, n_years, start_age,
+    strategy="fixed",
+    med_premium_pct=0.0,
+    pension_annual=0.0,
+    claim_age=60,
+):
+    """
+    動態提領模擬器 V2.0 — 三項科學修正：
+      A. 消費微笑曲線（75-84 歲縮減 20%、85 歲後增加 10%）
+      B. 醫療溢價指數複利（70 歲起 (1+rate)^(age-65) 疊加於總需求 15%）
+      C. 期初提領保守原則：(A - spend) × (1+r)，先扣費再計息
+    支援台灣勞保/勞退：claim_age 起從資產提領 = W0 − pension_annual
+    """
+    A            = float(A0)
+    W_total      = float(W0)
+    r            = r_pct / 100
+    med_rate     = med_premium_pct / 100
+    IWR          = W_total / A if A > 0 else 0.0   # 基於總實質購買力
+    gk_spend     = W_total                          # GK 追蹤總支出目標（絕對值）
+
+    for i in range(n_years):
         if A <= 0:
             return 0
-    return max(0, A)
+        current_age = start_age + i
 
-def project_smile(A0, W0, r_pct, n_years):
-    """消費微笑曲線：以略高之平均實質提領近似（約 +3%）"""
-    return project_fixed(A0, W0 * 1.03, r_pct, n_years)
+        # 本年度勞保/勞退收入
+        pension_income = (pension_annual
+                          if pension_annual > 0 and current_age >= int(claim_age)
+                          else 0.0)
 
-def project_gk(A0, W0, IWR_pct, r_pct, n_years):
-    """GK 護欄：依當下提領率觸發加薪/減薪 10%"""
-    A, W = float(A0), float(W0)
-    r = r_pct / 100
-    IWR = IWR_pct / 100
-    for _ in range(n_years):
-        if A <= 0:
-            return 0
-        wr = W / A
-        if wr < IWR * 0.8:
-            W *= 1.1
-        elif wr > IWR * 1.2:
-            W *= 0.9
-        A = A * (1 + r) - W
-    return max(0, A)
+        # ── 1. 策略決定「總支出目標」 ──────────────────────────────
+        if strategy == "fixed":
+            total_spend = W_total
 
-def _W_from_asset_tw(t, W0_total, pension_annual, claim_age, age_start):
-    """第 t 年從自有資產提領額（實質）；t=0 為第一年。"""
-    age_t = age_start + t
-    if age_t < claim_age:
-        return float(W0_total)
-    return max(0, float(W0_total) - float(pension_annual))
+        elif strategy == "smile":
+            total_spend = W_total
+            if 75 <= current_age <= 84:
+                total_spend *= 0.8          # Go-Go → Slow-Go 縮減 20%
+            elif current_age >= 85:
+                total_spend *= 1.1          # No-Go 醫療密集期增加 10%
 
-def project_fixed_tw(A0, W0_total, pension_annual, claim_age, age_start, r_pct, n_years):
-    """固定提領（台灣）：實質購買力由勞保勞退 + 自有資產支應，逐年從資產提領額不同。"""
-    A, r = float(A0), r_pct / 100
-    for t in range(n_years):
-        W_draw = _W_from_asset_tw(t, W0_total, pension_annual, claim_age, age_start)
-        A = A * (1 + r) - W_draw
-        if A <= 0:
-            return 0
-    return max(0, A)
+        elif strategy == "gk":
+            current_wr = gk_spend / A if A > 0 else 999.0
+            if current_wr < IWR * 0.8:
+                gk_spend *= 1.1             # 繁榮法則：強制加薪 10%
+            elif current_wr > IWR * 1.2:
+                gk_spend *= 0.9             # 保全法則：強制減薪 10%
+            total_spend = gk_spend
 
-def project_smile_tw(A0, W0_total, pension_annual, claim_age, age_start, r_pct, n_years):
-    """消費微笑曲線（台灣）：從資產提領以 +3% 近似。"""
-    A, r = float(A0), r_pct / 100
-    for t in range(n_years):
-        W_draw = _W_from_asset_tw(t, W0_total, pension_annual, claim_age, age_start) * 1.03
-        A = A * (1 + r) - W_draw
-        if A <= 0:
-            return 0
-    return max(0, A)
+        else:
+            total_spend = W_total
 
-def project_gk_tw(A0, W0_asset_year0, W0_total, pension_annual, claim_age, age_start, IWR_pct, r_pct, n_years):
-    """GK 護欄（台灣）：從資產提領隨勞保請領年齡變化，再依 GK 規則調整。"""
-    A = float(A0)
-    r = r_pct / 100
-    IWR = IWR_pct / 100
-    f = 1.0  # 加薪/減薪累積因子
-    for t in range(n_years):
-        if A <= 0:
-            return 0
-        W_baseline = _W_from_asset_tw(t, W0_total, pension_annual, claim_age, age_start)
-        W_draw = f * W_baseline
-        wr = W_draw / A
-        if wr < IWR * 0.8:
-            f *= 1.1
-        elif wr > IWR * 1.2:
-            f *= 0.9
-        A = A * (1 + r) - f * W_baseline
+        # ── 2. 非線性醫療溢價（70 歲起指數遞增）─────────────────────
+        if current_age >= 70 and med_rate > 0:
+            med_base  = W_total * 0.15      # 生活費中約 15% 屬醫療相關
+            med_extra = med_base * ((1 + med_rate) ** (current_age - 65) - 1)
+            total_spend += med_extra
+
+        # ── 3. 從資產提領 = 總支出 − 勞保勞退收入 ─────────────────────
+        spend_from_asset = max(0.0, total_spend - pension_income)
+
+        # ── 4. 期初提領保守原則：先扣費再計息 ─────────────────────────
+        A = (A - spend_from_asset) * (1 + r)
+
     return max(0, A)
 
 st.set_page_config(
@@ -212,7 +204,9 @@ with st.sidebar.expander("勞保／勞退（選填）", expanded=False):
     )
 pension_annual = pension_monthly_wan * 12 * 10_000  # NTD/年
 has_pension = pension_annual > 0
-W0_asset = _W_from_asset_tw(0, W0, pension_annual, claim_age, age_start) if has_pension else W0
+W0_asset = (max(0.0, W0 - pension_annual)
+            if has_pension and age_start >= int(claim_age)
+            else W0)
 
 # 衍生：IWR（以「從自有資產提領」為準）
 IWR = (W0_asset / A0) * 100 if A0 > 0 else 0
@@ -293,29 +287,25 @@ st.subheader("壓力測試 (90 歲時剩餘資產)")
 n_years = max(1, age_end - age_start)
 pension_note = f" · 勞保＋勞退 {_fmt_wan(pension_annual)}/年（{claim_age} 歲起）" if has_pension else ""
 st.markdown(f"**您的設定：起始資產 {_fmt_wan(A0)} · 實質購買力 {_fmt_wan(W0)}/年{pension_note} · 實質報酬 {r_pct}% · 規劃 {n_years} 年**")
-r_low = max(0, r_pct - 1.5)
-r_mid = r_pct
+r_low  = max(0,  r_pct - 1.5)
+r_mid  = r_pct
 r_high = min(15, r_pct + 1.5)
-if has_pension:
-    col_low = [
-        project_fixed_tw(A0, W0, pension_annual, claim_age, age_start, r_low, n_years),
-        project_smile_tw(A0, W0, pension_annual, claim_age, age_start, r_low, n_years),
-        project_gk_tw(A0, W0_asset, W0, pension_annual, claim_age, age_start, IWR, r_low, n_years),
-    ]
-    col_mid = [
-        project_fixed_tw(A0, W0, pension_annual, claim_age, age_start, r_mid, n_years),
-        project_smile_tw(A0, W0, pension_annual, claim_age, age_start, r_mid, n_years),
-        project_gk_tw(A0, W0_asset, W0, pension_annual, claim_age, age_start, IWR, r_mid, n_years),
-    ]
-    col_high = [
-        project_fixed_tw(A0, W0, pension_annual, claim_age, age_start, r_high, n_years),
-        project_smile_tw(A0, W0, pension_annual, claim_age, age_start, r_high, n_years),
-        project_gk_tw(A0, W0_asset, W0, pension_annual, claim_age, age_start, IWR, r_high, n_years),
-    ]
-else:
-    col_low = [project_fixed(A0, W0, r_low, n_years), project_smile(A0, W0, r_low, n_years), project_gk(A0, W0, IWR, r_low, n_years)]
-    col_mid = [project_fixed(A0, W0, r_mid, n_years), project_smile(A0, W0, r_mid, n_years), project_gk(A0, W0, IWR, r_mid, n_years)]
-    col_high = [project_fixed(A0, W0, r_high, n_years), project_smile(A0, W0, r_high, n_years), project_gk(A0, W0, IWR, r_high, n_years)]
+_kw = dict(pension_annual=pension_annual, claim_age=int(claim_age))
+col_low = [
+    run_dynamic_projection(A0, W0, r_low,  n_years, age_start, strategy="fixed", **_kw),
+    run_dynamic_projection(A0, W0, r_low,  n_years, age_start, strategy="smile", **_kw),
+    run_dynamic_projection(A0, W0, r_low,  n_years, age_start, strategy="gk",    **_kw),
+]
+col_mid = [
+    run_dynamic_projection(A0, W0, r_mid,  n_years, age_start, strategy="fixed", **_kw),
+    run_dynamic_projection(A0, W0, r_mid,  n_years, age_start, strategy="smile", **_kw),
+    run_dynamic_projection(A0, W0, r_mid,  n_years, age_start, strategy="gk",    **_kw),
+]
+col_high = [
+    run_dynamic_projection(A0, W0, r_high, n_years, age_start, strategy="fixed", **_kw),
+    run_dynamic_projection(A0, W0, r_high, n_years, age_start, strategy="smile", **_kw),
+    run_dynamic_projection(A0, W0, r_high, n_years, age_start, strategy="gk",    **_kw),
+]
 matrix_a = pd.DataFrame({
     "策略": ["固定提領 (實質購買力/年)", "消費微笑曲線", "GK 護欄"],
     f"實質 {r_low}% (悲觀)": [_fmt_asset(x) for x in col_low],
@@ -323,41 +313,32 @@ matrix_a = pd.DataFrame({
     f"實質 {r_high}% (樂觀)": [_fmt_asset(x) for x in col_high],
 })
 st.dataframe(matrix_a, use_container_width=True, hide_index=True)
-st.caption("以上為簡化試算（固定實質報酬、確定性路徑）；蒙地卡羅可進一步評估機率分布。")
+st.caption("V2.0 引擎：消費微笑曲線三段式、期初提領保守原則（先扣費再計息）；確定性路徑，蒙地卡羅可進一步評估成功機率。")
 
 st.subheader("多重風險疊加情境")
 r_down = max(0, r_pct - 1)
-# 各情境之 (實質報酬, 提領倍率)：醫療上升用略高提領近似
-r_base, w_base = r_pct, 1.0
-r_inf, w_inf = r_down, 1.0
-r_ret, w_ret = r_down, 1.0
-w_med = 1.08  # 醫療溢價上升 → 有效提領約 +8%
-r_multi, w_multi = r_down, 1.08
-def run_scenario(r, w_mult, use_gk=False):
-    W0_eff = W0 * w_mult
-    if has_pension:
-        if use_gk:
-            W0_asset_eff = _W_from_asset_tw(0, W0_eff, pension_annual, claim_age, age_start)
-            return project_gk_tw(A0, W0_asset_eff, W0_eff, pension_annual, claim_age, age_start, IWR, r, n_years)
-        return project_fixed_tw(A0, W0_eff, pension_annual, claim_age, age_start, r, n_years)
-    if use_gk:
-        return project_gk(A0, W0_eff, IWR, r, n_years)
-    return project_fixed(A0, W0_eff, r, n_years)
-res_base = run_scenario(r_base, w_base, use_gk=True)
-res_inf = run_scenario(r_inf, w_inf, use_gk=True)
-res_ret = run_scenario(r_ret, w_ret, use_gk=True)
-res_med = run_scenario(r_base, w_med, use_gk=True)
-res_multi = run_scenario(r_multi, w_multi, use_gk=True)
+_kw_med = dict(strategy="gk", pension_annual=pension_annual, claim_age=int(claim_age))
+res_base  = run_dynamic_projection(A0, W0, r_pct,  n_years, age_start,
+                                   med_premium_pct=medical_premium,       **_kw_med)
+res_inf   = run_dynamic_projection(A0, W0, r_down,  n_years, age_start,
+                                   med_premium_pct=medical_premium,       **_kw_med)
+res_med   = run_dynamic_projection(A0, W0, r_pct,  n_years, age_start,
+                                   med_premium_pct=medical_premium + 0.5, **_kw_med)
+res_multi = run_dynamic_projection(A0, W0, r_down,  n_years, age_start,
+                                   med_premium_pct=medical_premium + 0.5, **_kw_med)
 scenarios = [
-    ("基準", f"實質報酬 {r_pct}%、通膨 {inflation_pct}%、醫療溢價 CPI+{medical_premium}%", "依目前參數之基準路徑", _fmt_asset(res_base)),
-    ("通膨加劇", f"通膨 +1% → 實質報酬約 {r_down:.1f}%", "購買力侵蝕加重，殘值較基準下降", _fmt_asset(res_inf)),
-    ("實質報酬下修", f"實質報酬 {r_pct}% → {r_down:.1f}%", "市場長期低報酬，複利效果減弱", _fmt_asset(res_ret)),
-    ("醫療溢價上升", f"醫療溢價 CPI+{medical_premium}% → +{medical_premium + 0.5:.1f}%", "晚年支出上修，可動用資產減少", _fmt_asset(res_med)),
-    ("多重風險疊加", "通膨+1%、報酬-1%、醫療+0.5% 同時發生", "最壞情境，殘值與安全邊際明顯下降，建議保留緩衝", _fmt_asset(res_multi)),
+    ("基準",       f"實質報酬 {r_pct}%、通膨 {inflation_pct}%、醫療溢價 CPI+{medical_premium}%",
+     "依目前參數之基準路徑",                             _fmt_asset(res_base)),
+    ("通膨/報酬下修", f"實質報酬 {r_pct}% → {r_down:.1f}%",
+     "購買力侵蝕或市場低迷，複利減弱",                   _fmt_asset(res_inf)),
+    ("醫療溢價激增", f"醫療溢價 CPI+{medical_premium}% → +{medical_premium + 0.5:.1f}%",
+     "晚年護理支出非線性飆升（指數複利疊加）",            _fmt_asset(res_med)),
+    ("多重風險疊加", "報酬-1% 且 醫療溢價+0.5% 同時發生",
+     "最壞情境，GK 護欄極限抗壓能力測試",               _fmt_asset(res_multi)),
 ]
 df_risk = pd.DataFrame(scenarios, columns=["情境", "假設", "預估影響", "90歲剩餘資產 (GK)"])
 st.dataframe(df_risk, use_container_width=True, hide_index=True)
-st.caption("「90歲剩餘資產」為 GK 護欄策略下之簡化試算；多重風險疊加時建議保留流動性緩衝。")
+st.caption("醫療溢價採指數複利計算（70 歲起 (1+rate)^(age-65) 疊加），GK 護欄採期初提領保守原則；建議搭配流動性緩衝因應最壞情境。")
 st.divider()
 
 # ========== 區塊四：學術背景說明（可收合） ==========
