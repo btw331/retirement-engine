@@ -390,7 +390,7 @@ with tab1:
          "最壞情境，GK 護欄極限抗壓能力測試",
          _fmt_cell(res_multi)),
     ]
-    df_risk = pd.DataFrame(scenarios, columns=["情境", "假設", "預估影響", "90歲剩餘資產 (→ 約當年可提領)"])
+    df_risk = pd.DataFrame(scenarios, columns=["情境", "假設", "預估影響", "90歲剩餘資產（括號=約當2026年可提領/年）"])
     st.dataframe(df_risk, use_container_width=True, hide_index=True)
     st.caption("格式：剩餘資產 (→ 約當2026年可提領額)。GK 護欄 + 指數複利醫療溢價；建議搭配流動性緩衝因應最壞情境。")
     st.divider()
