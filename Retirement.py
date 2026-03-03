@@ -1,5 +1,4 @@
 # -*- coding: utf-8 -*-
-# -*- coding: utf-8 -*-
 """
 退休規劃大師 — 50年長週期資產動態管理
 Streamlit 版：精簡排版、學術說明、可調邊界條件
@@ -1012,7 +1011,7 @@ with tab2:
     )
     st.divider()
 
-    if edu_topic.startswith("1"):
+    if edu_topic.startswith("1｜"):
         st.subheader("退休三階段：消費微笑曲線 (Retirement Spending Smile)")
         st.markdown("> **學術來源**：David Blanchett (2014)「Exploring the retirement consumption puzzle」\n>\n> 退休支出並非線性遞減，而呈現「U型微笑曲線」：初期（活躍期）支出高，中期自然縮減，晚期（護理期）再度攀升。")
         phases = pd.DataFrame([
