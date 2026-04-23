@@ -343,158 +343,262 @@ st.set_page_config(
 st.sidebar.header("🔧 邊界條件設定")
 st.sidebar.caption("調整參數後，下方摘要與指標會即時更新。")
 
-# ── 使用引導（簡化介面）───────────────────────────────────────────────
-guide_mode = st.sidebar.toggle(
-    "🧭 使用引導（簡化介面）",
+def _clamp_int(x: int, lo: int, hi: int) -> int:
+    return int(min(hi, max(lo, int(x))))
+
+
+def _clamp_float(x: float, lo: float, hi: float) -> float:
+    return float(min(hi, max(lo, float(x))))
+
+
+# ── Wizard：一次只顯示一段（方向 3）────────────────────────────────────
+wizard_mode = st.sidebar.toggle(
+    "🧭 使用引導（Wizard）",
     value=True,
-    help="開啟後先勾選你的情境，只顯示必要參數；避免一次看到太多設定而難以上手。",
+    help="一次只顯示一小段設定，3 步驟完成輸入；降低新手的操作負擔。",
 )
-if guide_mode:
-    with st.sidebar.expander("✅ 先勾選你的情境", expanded=True):
-        use_asset_alloc = st.checkbox("我要填寫有價證券資產配置（建議）", value=True)
-        use_re_inputs = st.checkbox("我有不動產/租金/以房養老要納入", value=False)
-        use_pension_inputs = st.checkbox("我有勞保/勞退月領要納入", value=False)
-        use_cost_drag = st.checkbox("我要考慮費用率/摩擦/配息稅負（淨報酬）", value=True)
-else:
-    use_asset_alloc = True
-    use_re_inputs = True
-    use_pension_inputs = True
-    use_cost_drag = True
 
+# 統一預設值（Wizard/進階模式都會用到；避免 NameError）
+A0_securities_wan = 3000
+W0_wan = 120
+inflation_pct = 2.0
+medical_premium = 1.7
+age_start = 40
+age_end = 90
+use_inferred_r = "依資產結構推論"
+r_pct = None
 
-# 引導模式下讓資產/負債更顯眼（避免使用者以為沒改）
-_asset_box_title = "1｜資產/負債與生活費（引導）" if guide_mode else "資產與提領"
-with st.sidebar.expander(_asset_box_title, expanded=True):
-    if guide_mode:
-        st.markdown("**正資產（Assets）**")
-        A0_assets_wan = st.number_input(
-            "金融資產合計（不含房產，萬）",
-            min_value=0,
-            max_value=50_000,
-            value=3_000,
-            step=100,
-            key="a0_assets_wan",
-            help="股票、ETF、基金、現金等可快速變現資產（不含房產）。",
-        )
-        st.markdown("**負債（Liabilities）**")
-        A0_liab_wan = st.number_input(
-            "金融負債合計（信貸/卡債等，萬）",
-            min_value=0,
-            max_value=50_000,
-            value=0,
-            step=50,
-            key="a0_liab_wan",
-            help="不含房貸；此處用於把『金融正資產』轉成『可用淨金融資產』。",
-        )
-        mortgage_wan = st.number_input(
-            "房貸餘額（萬）",
-            min_value=0,
-            max_value=20_000,
-            value=0,
-            step=50,
-            key="guide_mortgage_wan",
-            help="房貸屬於不動產的負債，會在不動產區塊自動帶入，並影響房產淨值（不會從金融資產中扣除）。",
-        )
-        A0_securities_wan = max(0, int(A0_assets_wan - A0_liab_wan))
-        st.caption(
-            f"→ 可用淨金融資產（帶入引擎）= **{A0_securities_wan:,} 萬**"
-            f"　｜　房貸：**{int(mortgage_wan):,} 萬**（計入房產淨值）"
-        )
-    else:
-        A0_securities_wan = st.number_input(
-            "有價證券總額 (萬)",
-            min_value=0,
-            max_value=50_000,
-            value=3_000,
-            step=100,
-            help="股票、ETF、基金等流動性金融資產，以萬為單位",
-        )
-
-    W0_wan = st.number_input(
-        "實質購買力 (萬/年)",
-        min_value=10,
-        max_value=500,
-        value=120,
-        step=5,
-        help="起始年全年生活費目標（含所有支出），以萬/年為單位",
-    )
-    A0 = A0_securities_wan * 10_000   # 基礎值；不動產淨值另行加總
-    W0 = W0_wan * 10_000
-
-with st.sidebar.expander("報酬與通膨", expanded=True):
-    inflation_pct = st.slider(
-        "預期通膨率 CPI (%)",
-        min_value=0.0,
-        max_value=8.0,
-        value=2.0,
-        step=0.5,
-        help="預期年通膨率，可參考主計總處與高齡家庭 CPI（台灣近年約 1.5%～2%）",
-    )
-    use_inferred_r = st.radio(
-        "實質報酬率 r 來源",
-        ["依資產結構推論", "手動設定"],
-        index=0,
-        help="推論值由下方的資產結構加權計算",
-    )
-    if use_inferred_r == "手動設定":
-        r_pct = st.slider(
-            "預期實質報酬率 r (%)",
-            min_value=0.0,
-            max_value=15.0,
-            value=4.0,
-            step=0.5,
-            help="扣除通膨後的年化回報",
-        )
-    else:
-        r_pct = None  # 待資產結構計算後填入
-    medical_premium = st.slider(
-        "醫療溢價 i_m (CPI + %)",
-        min_value=0.0,
-        max_value=4.0,
-        value=1.7,
-        step=0.1,
-        help="台灣高齡家庭 CPI 長期高於整體，醫療保健權重較高，建議 1.5%～2%；預設 1.7% 符合實證",
-    )
-
-# 預設值（不顯示時仍需有值供下游計算）
 product_mode = "累積型（不配息）"
 expense_ratio_pct = 0.20
 friction_drag_pct = 0.05
 dividend_yield_pct = 2.0
 dividend_tax_pct = 30.0
-if use_cost_drag:
-    with st.sidebar.expander("成本／稅務拖累（落實到引擎）", expanded=not guide_mode):
-        st.caption("把『費用率、摩擦成本、配息稅負』轉成每年報酬率扣減（return drag），直接影響確定性引擎與蒙地卡羅。")
-        product_mode = st.radio(
-            "ETF/基金配息模式（影響稅務拖累）",
-            ["累積型（不配息）", "配息型（配息會被課稅）"],
-            index=0,
-            help="累積型：假設不配息，較接近『不配息級別/累積型』的長期複利；配息型：每年配息需繳稅，形成長期報酬拖累。",
-        )
-        expense_ratio_pct = st.slider(
-            "內扣費用率拖累（%/年）",
-            min_value=0.0, max_value=2.0, value=float(expense_ratio_pct), step=0.05,
-            help="費用率會直接吃掉報酬（同資產、同市場下，費用率越高長期差距越大）。",
-        )
-        friction_drag_pct = st.slider(
-            "交易/換股/追蹤誤差摩擦（%/年）",
-            min_value=0.0, max_value=1.0, value=float(friction_drag_pct), step=0.01,
-            help="用單一參數近似：換股、買賣價差、追蹤誤差等摩擦成本。",
-        )
-        dividend_yield_pct = st.slider(
-            "配息率（%/年，用於估算稅務拖累）",
-            min_value=0.0, max_value=10.0, value=float(dividend_yield_pct), step=0.5,
-            help="僅在『配息型』時用來估算配息稅負造成的長期拖累（不直接當作額外收入）。",
-        )
-        dividend_tax_pct = st.slider(
-            "配息稅負/扣繳率（%）",
-            min_value=0.0, max_value=40.0, value=float(dividend_tax_pct), step=1.0,
-            help="用單一綜合稅負近似（含股利課稅、二代健保補充保費等可能成本；實務依個人稅率而異）。",
-        )
 
-with st.sidebar.expander("年齡區間", expanded=True):
-    age_start = st.number_input("起始年齡 (歲)", 25, 70, 40, 1)
-    age_end = st.number_input("目標年齡 (歲)", 70, 100, 90, 1)
+use_asset_alloc = True
+use_re_inputs = False
+use_pension_inputs = False
+use_cost_drag = True
+
+# 不動產/收入預設（避免 NameError）
+include_re = False
+re_home_wan = re_rental_wan = re_mortgage_wan = 0
+re_net_wan = 0
+re_liquidity_discount = 20
+re_net_wan_eff = 0
+rental_monthly_wan = 0.0
+rental_start_age_input = 65
+rm_start_age = 999
+rm_monthly_wan = 0.0
+
+pension_monthly_wan = 0.0
+claim_age = 60
+
+
+def _render_wizard() -> None:
+    st.session_state.setdefault("wiz_step", 1)
+    step = int(st.session_state["wiz_step"])
+    step = 1 if step < 1 else 3 if step > 3 else step
+    st.session_state["wiz_step"] = step
+
+    st.sidebar.markdown(f"**Step {step} / 3**")
+    st.sidebar.progress(step / 3)
+
+    # Step 1 ───────────────────────────────────────────────────────────
+    if step == 1:
+        with st.sidebar.expander("Step 1｜生活費與年齡", expanded=True):
+            st.session_state["age_start"] = st.number_input("起始年齡 (歲)", 25, 70, int(st.session_state.get("age_start", age_start)), 1, key="wiz_age_start")
+            st.session_state["age_end"] = st.number_input(
+                "目標年齡 (歲)",
+                70,
+                100,
+                int(st.session_state.get("age_end", age_end)),
+                1,
+                key="wiz_age_end",
+            )
+            st.session_state["W0_wan"] = st.number_input(
+                "年度生活費 W₀（實質，萬/年）",
+                min_value=10.0,
+                max_value=500.0,
+                value=float(st.session_state.get("W0_wan", W0_wan)),
+                step=5.0,
+                key="wiz_w0",
+            )
+            st.session_state["inflation_pct"] = st.slider("通膨率 CPI (%)", 0.0, 8.0, float(st.session_state.get("inflation_pct", inflation_pct)), 0.5, key="wiz_cpi")
+            st.session_state["medical_premium"] = st.slider(
+                "醫療溢價 i_m (CPI + %)",
+                0.0,
+                4.0,
+                float(st.session_state.get("medical_premium", medical_premium)),
+                0.1,
+                key="wiz_med",
+            )
+
+        c1, c2 = st.sidebar.columns(2)
+        with c2:
+            if st.button("下一步 ▶", key="wiz_next_1", use_container_width=True):
+                st.session_state["wiz_step"] = 2
+                st.rerun()
+
+    # Step 2 ───────────────────────────────────────────────────────────
+    elif step == 2:
+        with st.sidebar.expander("Step 2｜資產負債與固定現金流", expanded=True):
+            st.markdown("**資產負債（先算淨金融資產）**")
+            assets = st.number_input(
+                "金融資產（萬）",
+                min_value=0,
+                max_value=50_000,
+                value=int(st.session_state.get("a0_assets_wan", 3000)),
+                step=100,
+                key="wiz_a_assets",
+            )
+            liab = st.number_input(
+                "金融負債（信貸/卡債等，萬）",
+                min_value=0,
+                max_value=50_000,
+                value=int(st.session_state.get("a0_liab_wan", 0)),
+                step=50,
+                key="wiz_a_liab",
+            )
+            st.session_state["a0_assets_wan"] = assets
+            st.session_state["a0_liab_wan"] = liab
+            net_fin = max(0, int(assets - liab))
+            st.metric("淨金融資產（帶入引擎）", f"{net_fin:,} 萬")
+
+            st.markdown("---")
+            st.session_state["use_re_inputs"] = st.checkbox("我有不動產/房貸/租金/以房養老", value=bool(st.session_state.get("use_re_inputs", False)), key="wiz_use_re")
+            if st.session_state["use_re_inputs"]:
+                st.markdown("**房產與房貸**")
+                st.session_state["re_home_wan"] = st.number_input("自用住宅市值 (萬)", 0, 20_000, int(st.session_state.get("re_home_wan", 0)), 100, key="wiz_re_home")
+                st.session_state["re_rental_wan"] = st.number_input("出租房產市值 (萬)", 0, 20_000, int(st.session_state.get("re_rental_wan", 0)), 100, key="wiz_re_rental")
+                st.session_state["guide_mortgage_wan"] = st.number_input("房貸餘額 (萬)", 0, 20_000, int(st.session_state.get("guide_mortgage_wan", 0)), 50, key="wiz_re_mort")
+                st.session_state["re_liquidity_discount"] = st.slider("流動性折扣 (%)", 0, 50, int(st.session_state.get("re_liquidity_discount", 20)), 1, key="wiz_re_disc")
+
+                st.markdown("**租金/以房養老（可選）**")
+                st.session_state["rental_monthly_wan"] = st.number_input(
+                    "月租金淨收入 (萬/月)", 0.0, 100.0, float(st.session_state.get("rental_monthly_wan", 0.0)), 0.5, key="wiz_rent_m"
+                )
+                st.session_state["rental_start_age_input"] = st.number_input(
+                    "租金開始年齡 (歲)", 40, 85, int(st.session_state.get("rental_start_age_input", 65)), 1, key="wiz_rent_age"
+                )
+                use_rm = st.checkbox("啟用以房養老", value=bool(st.session_state.get("use_rm", False)), key="wiz_use_rm")
+                st.session_state["use_rm"] = use_rm
+                if use_rm:
+                    st.session_state["rm_start_age"] = st.number_input("以房養老啟動年齡 (歲)", 60, 90, int(st.session_state.get("rm_start_age", 80)), 1, key="wiz_rm_age")
+                    st.session_state["rm_monthly_wan"] = st.number_input("以房養老月領 (萬/月)", 0.0, 50.0, float(st.session_state.get("rm_monthly_wan", 3.0)), 0.5, key="wiz_rm_m")
+
+            st.markdown("---")
+            st.session_state["use_pension_inputs"] = st.checkbox("我有勞保/勞退月領", value=bool(st.session_state.get("use_pension_inputs", False)), key="wiz_use_pen")
+            if st.session_state["use_pension_inputs"]:
+                st.session_state["pension_monthly_wan"] = st.number_input(
+                    "勞保＋勞退 月領 (萬/月)", 0.0, 50.0, float(st.session_state.get("pension_monthly_wan", 0.0)), 0.5, key="wiz_pen_m"
+                )
+                st.session_state["claim_age"] = st.number_input("請領年齡 (歲)", 55, 70, int(st.session_state.get("claim_age", 60)), 1, key="wiz_claim")
+
+        c1, c2 = st.sidebar.columns(2)
+        with c1:
+            if st.button("◀ 上一步", key="wiz_back_2", use_container_width=True):
+                st.session_state["wiz_step"] = 1
+                st.rerun()
+        with c2:
+            if st.button("下一步 ▶", key="wiz_next_2", use_container_width=True):
+                st.session_state["wiz_step"] = 3
+                st.rerun()
+
+    # Step 3 ───────────────────────────────────────────────────────────
+    else:
+        with st.sidebar.expander("Step 3｜報酬假設、成本拖累與策略", expanded=True):
+            st.session_state["use_inferred_r"] = st.radio("實質報酬率 r 來源", ["依資產結構推論", "手動設定"], index=0, key="wiz_rsrc")
+            if st.session_state["use_inferred_r"] == "手動設定":
+                st.session_state["r_pct_manual"] = st.slider("實質報酬 r（毛，%）", 0.0, 15.0, float(st.session_state.get("r_pct_manual", 4.0)), 0.5, key="wiz_rmanual")
+            else:
+                st.markdown("**快速資產結構（用於推論 r）**")
+                scenario = st.radio("報酬情境", ["保守", "中性", "積極"], index=0, horizontal=True, key="wiz_scn")
+                r_table = {
+                    "保守": (6.0, 5.0, 5.0, 4.0, 4.5),
+                    "中性": (7.0, 6.5, 6.5, 5.5, 5.5),
+                    "積極": (9.0, 8.5, 8.5, 7.0, 7.5),
+                }
+                r_us_stock, r_us_etf, r_tw_stock, r_tw_etf, r_global = r_table[scenario]
+                pct_us_e = st.slider("美股ETF (%)", 0, 100, int(st.session_state.get("pct_us_e", 20)), 5, key="wiz_pct_us_e")
+                pct_tw_e = st.slider("台股ETF (%)", 0, 100, int(st.session_state.get("pct_tw_e", 40)), 5, key="wiz_pct_tw_e")
+                pct_glb = st.slider("全球ETF (%)", 0, 100, int(st.session_state.get("pct_glb", 10)), 5, key="wiz_pct_glb")
+                pct_tw_s = st.slider("台股個股 (%)", 0, 100, int(st.session_state.get("pct_tw_s", 30)), 5, key="wiz_pct_tw_s")
+                pct_us_s = max(0, 100 - (pct_us_e + pct_tw_e + pct_glb + pct_tw_s))
+                st.caption(f"美股個股（自動補足）={pct_us_s}%（合計 100%）")
+                inferred = (pct_us_s * r_us_stock + pct_us_e * r_us_etf + pct_tw_s * r_tw_stock + pct_tw_e * r_tw_etf + pct_glb * r_global) / 100
+                st.session_state["r_pct_inferred"] = float(inferred)
+                st.metric("推論實質報酬 r（毛）", f"{inferred:.2f}%")
+
+            st.markdown("---")
+            st.session_state["use_cost_drag"] = st.checkbox("考慮費用率/摩擦/配息稅負（淨報酬）", value=bool(st.session_state.get("use_cost_drag", True)), key="wiz_use_drag")
+            if st.session_state["use_cost_drag"]:
+                st.session_state["product_mode"] = st.radio("配息模式", ["累積型（不配息）", "配息型（配息會被課稅）"], index=0, key="wiz_pm")
+                st.session_state["expense_ratio_pct"] = st.slider("費用率拖累（%/年）", 0.0, 2.0, float(st.session_state.get("expense_ratio_pct", 0.20)), 0.05, key="wiz_er")
+                st.session_state["friction_drag_pct"] = st.slider("摩擦拖累（%/年）", 0.0, 1.0, float(st.session_state.get("friction_drag_pct", 0.05)), 0.01, key="wiz_fr")
+                st.session_state["dividend_yield_pct"] = st.slider("配息率（%/年）", 0.0, 10.0, float(st.session_state.get("dividend_yield_pct", 2.0)), 0.5, key="wiz_dy")
+                st.session_state["dividend_tax_pct"] = st.slider("配息稅負（%）", 0.0, 40.0, float(st.session_state.get("dividend_tax_pct", 30.0)), 1.0, key="wiz_dt")
+
+            st.markdown("---")
+            st.session_state["strategy_choice"] = st.radio("策略", ["固定提領", "消費微笑曲線", "GK 護欄"], index=2, horizontal=True, key="wiz_strat")
+
+        c1, c2 = st.sidebar.columns(2)
+        with c1:
+            if st.button("◀ 上一步", key="wiz_back_3", use_container_width=True):
+                st.session_state["wiz_step"] = 2
+                st.rerun()
+        with c2:
+            if st.button("完成 ✅", key="wiz_done", use_container_width=True):
+                st.session_state["wiz_done"] = True
+                st.success("已完成 Wizard，右側結果已更新。")
+
+
+if wizard_mode:
+    _render_wizard()
+
+    # Step 1
+    age_start = int(st.session_state.get("age_start", age_start))
+    age_end = int(st.session_state.get("age_end", age_end))
+    W0_wan = float(st.session_state.get("W0_wan", W0_wan))
+    inflation_pct = float(st.session_state.get("inflation_pct", inflation_pct))
+    medical_premium = float(st.session_state.get("medical_premium", medical_premium))
+
+    # Step 2
+    A0_securities_wan = max(0, int(st.session_state.get("a0_assets_wan", 3000) - st.session_state.get("a0_liab_wan", 0)))
+    use_re_inputs = bool(st.session_state.get("use_re_inputs", False))
+    if use_re_inputs:
+        include_re = True  # Wizard 勾選即視為納入，細部仍可在 Step2 補
+        re_home_wan = int(st.session_state.get("re_home_wan", 0))
+        re_rental_wan = int(st.session_state.get("re_rental_wan", 0))
+        re_mortgage_wan = int(st.session_state.get("guide_mortgage_wan", 0))
+        re_liquidity_discount = int(st.session_state.get("re_liquidity_discount", 20))
+        rental_monthly_wan = float(st.session_state.get("rental_monthly_wan", 0.0))
+        rental_start_age_input = int(st.session_state.get("rental_start_age_input", 65))
+        if bool(st.session_state.get("use_rm", False)):
+            rm_start_age = int(st.session_state.get("rm_start_age", 80))
+            rm_monthly_wan = float(st.session_state.get("rm_monthly_wan", 3.0))
+
+    use_pension_inputs = bool(st.session_state.get("use_pension_inputs", False))
+    if use_pension_inputs:
+        pension_monthly_wan = float(st.session_state.get("pension_monthly_wan", 0.0))
+        claim_age = int(st.session_state.get("claim_age", 60))
+
+    # Step 3
+    use_inferred_r = str(st.session_state.get("use_inferred_r", use_inferred_r))
+    if use_inferred_r == "手動設定":
+        r_pct = float(st.session_state.get("r_pct_manual", 4.0))
+    else:
+        r_pct = float(st.session_state.get("r_pct_inferred", 4.0))
+    use_cost_drag = bool(st.session_state.get("use_cost_drag", True))
+    if use_cost_drag:
+        product_mode = str(st.session_state.get("product_mode", product_mode))
+        expense_ratio_pct = float(st.session_state.get("expense_ratio_pct", expense_ratio_pct))
+        friction_drag_pct = float(st.session_state.get("friction_drag_pct", friction_drag_pct))
+        dividend_yield_pct = float(st.session_state.get("dividend_yield_pct", dividend_yield_pct))
+        dividend_tax_pct = float(st.session_state.get("dividend_tax_pct", dividend_tax_pct))
+
+else:
+    # 進階模式：保留既有完整側欄（後續段落仍會沿用）
+    pass
 
 # ── 不動產（選填）───────────────────────────────────────────────────────
 # ── 不動產（選填）───────────────────────────────────────────────────────
@@ -507,8 +611,8 @@ rental_monthly_wan = 0.0
 rental_start_age_input = 65
 rm_start_age = 999
 rm_monthly_wan = 0.0
-if use_re_inputs:
-    with st.sidebar.expander("🏠 不動產（選填）", expanded=guide_mode):
+if (not wizard_mode) and use_re_inputs:
+    with st.sidebar.expander("🏠 不動產（選填）", expanded=True):
         st.caption("填寫後可將房產折後淨值計入初始資產，並以租金收入減少每年從有價證券的提領。")
         include_re = st.toggle("將不動產納入計算", value=False,
                                help="開啟後，房產折後淨值加入 A₀；租金收入自動抵銷部分年度提領")
@@ -704,7 +808,7 @@ st.sidebar.caption(
 )
 pension_monthly_wan = 0.0
 claim_age = 60
-if use_pension_inputs:
+if (not wizard_mode) and use_pension_inputs:
     with st.sidebar.expander("勞保／勞退（選填）", expanded=False):
         st.caption("填寫後，從請領年齡起「實質購買力」改由勞保＋勞退支應一部分，自有資產提領減少。")
         pension_monthly_wan = st.number_input(
