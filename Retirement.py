@@ -760,8 +760,12 @@ if include_re and re_net_wan > 0:
     )
 
 # ── 有價證券資產配置（Section 1）────────────────────────────────────────
-with st.sidebar.expander("📈 1. 有價證券配置", expanded=use_asset_alloc):
-    asset_input_mode = st.radio(
+# Wizard 模式下僅在 Step 2 顯示（避免每一步都被大量參數干擾）
+_wiz_step = int(st.session_state.get("wiz_step", 1)) if wizard_mode else 0
+_show_asset_alloc = (not wizard_mode) or (_wiz_step == 2)
+if _show_asset_alloc:
+    with st.sidebar.expander("📈 1. 有價證券配置", expanded=use_asset_alloc):
+        asset_input_mode = st.radio(
         "輸入方式",
         ["填寫實際金額 (萬)", "填寫比例 (%)"],
         index=0,
