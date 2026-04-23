@@ -967,33 +967,38 @@ with tab1:
     st.divider()
 
     # ── 資產結構 ──
-    st.subheader("資產結構現況")
-    if asset_input_mode == "填寫實際金額 (萬)":
-        _amts = [amt_us_stock, amt_us_etf, amt_tw_stock, amt_tw_etf]
-        _amt_col = [f"{v:,} 萬" for v in _amts]
+    # Wizard 模式下，資產結構的細節僅在 Step 2 顯示（避免 Step 1/3 因未渲染配置區而 NameError）
+    if (not wizard_mode) or (int(st.session_state.get("wiz_step", 1)) == 2):
+        st.subheader("資產結構現況")
+        if asset_input_mode == "填寫實際金額 (萬)":
+            _amts = [amt_us_stock, amt_us_etf, amt_tw_stock, amt_tw_etf]
+            _amt_col = [f"{v:,} 萬" for v in _amts]
+        else:
+            _amt_col = [
+                f"{A0 * pct_us_s / 100 / 10_000:,.1f} 萬",
+                f"{A0 * pct_us_e / 100 / 10_000:,.1f} 萬",
+                f"{A0 * pct_tw_s / 100 / 10_000:,.1f} 萬",
+                f"{A0 * pct_tw_e / 100 / 10_000:,.1f} 萬",
+            ]
+        df_asset = pd.DataFrame({
+            "類別": ["美股個股", "美股 ETF", "台股個股", "台股 ETF"],
+            "實際金額": _amt_col,
+            "佔比 (%)": [round(pct_us_s, 1), round(pct_us_e, 1), round(pct_tw_s, 1), round(pct_tw_e, 1)],
+            "假設實質報酬": [f"{r_us_stock}%", f"{r_us_etf}%", f"{r_tw_stock}%", f"{r_tw_etf}%"],
+        })
+        st.dataframe(df_asset, use_container_width=True, hide_index=True)
+        st.markdown(
+            f"**推論實質報酬率**：**{inferred_r:.1f}%**（依上表占比與假設報酬加權平均）　"
+            f"｜ 情境：**{return_scenario}**（可於左側切換）"
+        )
+        st.caption(
+            "歷史參考：0050 名目年化約 11.6%（2003–2024）；VTI 名目年化約 9.5%（2005–2024，含2008危機）。"
+            "扣除通膨（2%）後實質約 7–10%，保守情境約為歷史值的一半，中性約 60–65%，積極約 80%。"
+            "注意：算術加權平均略高於幾何平均（方差拖累約 0.5–1.1%），長期規劃建議偏向保守情境。"
+        )
     else:
-        _amt_col = [
-            f"{A0 * pct_us_s / 100 / 10_000:,.1f} 萬",
-            f"{A0 * pct_us_e / 100 / 10_000:,.1f} 萬",
-            f"{A0 * pct_tw_s / 100 / 10_000:,.1f} 萬",
-            f"{A0 * pct_tw_e / 100 / 10_000:,.1f} 萬",
-        ]
-    df_asset = pd.DataFrame({
-        "類別": ["美股個股", "美股 ETF", "台股個股", "台股 ETF"],
-        "實際金額": _amt_col,
-        "佔比 (%)": [round(pct_us_s, 1), round(pct_us_e, 1), round(pct_tw_s, 1), round(pct_tw_e, 1)],
-        "假設實質報酬": [f"{r_us_stock}%", f"{r_us_etf}%", f"{r_tw_stock}%", f"{r_tw_etf}%"],
-    })
-    st.dataframe(df_asset, use_container_width=True, hide_index=True)
-    st.markdown(
-        f"**推論實質報酬率**：**{inferred_r:.1f}%**（依上表占比與假設報酬加權平均）　"
-        f"｜ 情境：**{return_scenario}**（可於左側切換）"
-    )
-    st.caption(
-        "歷史參考：0050 名目年化約 11.6%（2003–2024）；VTI 名目年化約 9.5%（2005–2024，含2008危機）。"
-        "扣除通膨（2%）後實質約 7–10%，保守情境約為歷史值的一半，中性約 60–65%，積極約 80%。"
-        "注意：算術加權平均略高於幾何平均（方差拖累約 0.5–1.1%），長期規劃建議偏向保守情境。"
-    )
+        st.subheader("資產結構現況")
+        st.info("在 Wizard 模式下，資產結構細節會在 **Step 2** 顯示。")
 
     # 不動產貢獻摘要（若已啟用）
     _re_total_income = rental_annual + rm_annual
