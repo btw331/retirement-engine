@@ -343,6 +343,25 @@ st.set_page_config(
 st.sidebar.header("🔧 邊界條件設定")
 st.sidebar.caption("調整參數後，下方摘要與指標會即時更新。")
 
+# ── 使用引導（簡化介面）───────────────────────────────────────────────
+guide_mode = st.sidebar.toggle(
+    "🧭 使用引導（簡化介面）",
+    value=True,
+    help="開啟後先勾選你的情境，只顯示必要參數；避免一次看到太多設定而難以上手。",
+)
+if guide_mode:
+    with st.sidebar.expander("✅ 先勾選你的情境", expanded=True):
+        use_asset_alloc = st.checkbox("我要填寫有價證券資產配置（建議）", value=True)
+        use_re_inputs = st.checkbox("我有不動產/租金/以房養老要納入", value=False)
+        use_pension_inputs = st.checkbox("我有勞保/勞退月領要納入", value=False)
+        use_cost_drag = st.checkbox("我要考慮費用率/摩擦/配息稅負（淨報酬）", value=True)
+else:
+    use_asset_alloc = True
+    use_re_inputs = True
+    use_pension_inputs = True
+    use_cost_drag = True
+
+
 with st.sidebar.expander("資產與提領", expanded=True):
     A0_securities_wan = st.number_input(
         "有價證券總額 (萬)",
@@ -398,44 +417,61 @@ with st.sidebar.expander("報酬與通膨", expanded=True):
         help="台灣高齡家庭 CPI 長期高於整體，醫療保健權重較高，建議 1.5%～2%；預設 1.7% 符合實證",
     )
 
-with st.sidebar.expander("成本／稅務拖累（落實到引擎）", expanded=False):
-    st.caption("把『費用率、摩擦成本、配息稅負』轉成每年報酬率扣減（return drag），直接影響確定性引擎與蒙地卡羅。")
-    product_mode = st.radio(
-        "ETF/基金配息模式（影響稅務拖累）",
-        ["累積型（不配息）", "配息型（配息會被課稅）"],
-        index=0,
-        help="累積型：假設不配息，較接近『不配息級別/累積型』的長期複利；配息型：每年配息需繳稅，形成長期報酬拖累。",
-    )
-    expense_ratio_pct = st.slider(
-        "內扣費用率拖累（%/年）",
-        min_value=0.0, max_value=2.0, value=0.20, step=0.05,
-        help="費用率會直接吃掉報酬（同資產、同市場下，費用率越高長期差距越大）。",
-    )
-    friction_drag_pct = st.slider(
-        "交易/換股/追蹤誤差摩擦（%/年）",
-        min_value=0.0, max_value=1.0, value=0.05, step=0.01,
-        help="用單一參數近似：換股、買賣價差、追蹤誤差等摩擦成本。",
-    )
-    dividend_yield_pct = st.slider(
-        "配息率（%/年，用於估算稅務拖累）",
-        min_value=0.0, max_value=10.0, value=2.0, step=0.5,
-        help="僅在『配息型』時用來估算配息稅負造成的長期拖累（不直接當作額外收入）。",
-    )
-    dividend_tax_pct = st.slider(
-        "配息稅負/扣繳率（%）",
-        min_value=0.0, max_value=40.0, value=30.0, step=1.0,
-        help="用單一綜合稅負近似（含股利課稅、二代健保補充保費等可能成本；實務依個人稅率而異）。",
-    )
+# 預設值（不顯示時仍需有值供下游計算）
+product_mode = "累積型（不配息）"
+expense_ratio_pct = 0.20
+friction_drag_pct = 0.05
+dividend_yield_pct = 2.0
+dividend_tax_pct = 30.0
+if use_cost_drag:
+    with st.sidebar.expander("成本／稅務拖累（落實到引擎）", expanded=not guide_mode):
+        st.caption("把『費用率、摩擦成本、配息稅負』轉成每年報酬率扣減（return drag），直接影響確定性引擎與蒙地卡羅。")
+        product_mode = st.radio(
+            "ETF/基金配息模式（影響稅務拖累）",
+            ["累積型（不配息）", "配息型（配息會被課稅）"],
+            index=0,
+            help="累積型：假設不配息，較接近『不配息級別/累積型』的長期複利；配息型：每年配息需繳稅，形成長期報酬拖累。",
+        )
+        expense_ratio_pct = st.slider(
+            "內扣費用率拖累（%/年）",
+            min_value=0.0, max_value=2.0, value=float(expense_ratio_pct), step=0.05,
+            help="費用率會直接吃掉報酬（同資產、同市場下，費用率越高長期差距越大）。",
+        )
+        friction_drag_pct = st.slider(
+            "交易/換股/追蹤誤差摩擦（%/年）",
+            min_value=0.0, max_value=1.0, value=float(friction_drag_pct), step=0.01,
+            help="用單一參數近似：換股、買賣價差、追蹤誤差等摩擦成本。",
+        )
+        dividend_yield_pct = st.slider(
+            "配息率（%/年，用於估算稅務拖累）",
+            min_value=0.0, max_value=10.0, value=float(dividend_yield_pct), step=0.5,
+            help="僅在『配息型』時用來估算配息稅負造成的長期拖累（不直接當作額外收入）。",
+        )
+        dividend_tax_pct = st.slider(
+            "配息稅負/扣繳率（%）",
+            min_value=0.0, max_value=40.0, value=float(dividend_tax_pct), step=1.0,
+            help="用單一綜合稅負近似（含股利課稅、二代健保補充保費等可能成本；實務依個人稅率而異）。",
+        )
 
 with st.sidebar.expander("年齡區間", expanded=True):
     age_start = st.number_input("起始年齡 (歲)", 25, 70, 40, 1)
     age_end = st.number_input("目標年齡 (歲)", 70, 100, 90, 1)
 
 # ── 不動產（選填）───────────────────────────────────────────────────────
-with st.sidebar.expander("🏠 不動產（選填）", expanded=False):
-    st.caption("填寫後可將房產折後淨值計入初始資產，並以租金收入減少每年從有價證券的提領。")
-    include_re = st.toggle("將不動產納入計算", value=False,
-                           help="開啟後，房產折後淨值加入 A₀；租金收入自動抵銷部分年度提領")
+# ── 不動產（選填）───────────────────────────────────────────────────────
+include_re = False
+re_home_wan = re_rental_wan = re_mortgage_wan = 0
+re_net_wan = 0
+re_liquidity_discount = 20
+rental_monthly_wan = 0.0
+rental_start_age_input = 65
+rm_start_age = 999
+rm_monthly_wan = 0.0
+if use_re_inputs:
+    with st.sidebar.expander("🏠 不動產（選填）", expanded=False):
+        st.caption("填寫後可將房產折後淨值計入初始資產，並以租金收入減少每年從有價證券的提領。")
+        include_re = st.toggle("將不動產納入計算", value=False,
+                               help="開啟後，房產折後淨值加入 A₀；租金收入自動抵銷部分年度提領")
 
     re_home_wan    = st.number_input("自用住宅市值 (萬)",   min_value=0, max_value=20_000, value=0,   step=100,
                                      help="自住房屋目前市值，退休後居住成本已鎖定（不計入可提領現金流）")
@@ -518,7 +554,7 @@ if include_re and re_net_wan > 0:
     )
 
 # ── 有價證券資產配置（Section 1）────────────────────────────────────────
-with st.sidebar.expander("📈 1. 有價證券配置", expanded=True):
+with st.sidebar.expander("📈 1. 有價證券配置", expanded=use_asset_alloc):
     asset_input_mode = st.radio(
         "輸入方式",
         ["填寫實際金額 (萬)", "填寫比例 (%)"],
@@ -611,24 +647,27 @@ st.sidebar.caption(
     f"淨實質報酬（引擎用）= **{r_pct:.2f}%** ＝ 毛 {r_pct_gross:.2f}% − 拖累 {r_drag_pct:.2f}%"
     + ("（含配息稅負）" if product_mode.startswith("配息型") else "（不含配息稅負）")
 )
-with st.sidebar.expander("勞保／勞退（選填）", expanded=False):
-    st.caption("填寫後，從請領年齡起「實質購買力」改由勞保＋勞退支應一部分，自有資產提領減少。")
-    pension_monthly_wan = st.number_input(
-        "勞保＋勞退 月領 (萬/月)",
-        min_value=0.0,
-        max_value=50.0,
-        value=0.0,
-        step=0.5,
-        help="預期勞保老年給付＋勞退月領合計（選填）",
-    )
-    claim_age = st.number_input(
-        "勞保/勞退 請領年齡 (歲)",
-        min_value=55,
-        max_value=70,
-        value=60,
-        step=1,
-        help="勞退 60 歲可請領；勞保年金請領年齡逐步延後至 65 歲",
-    )
+pension_monthly_wan = 0.0
+claim_age = 60
+if use_pension_inputs:
+    with st.sidebar.expander("勞保／勞退（選填）", expanded=False):
+        st.caption("填寫後，從請領年齡起「實質購買力」改由勞保＋勞退支應一部分，自有資產提領減少。")
+        pension_monthly_wan = st.number_input(
+            "勞保＋勞退 月領 (萬/月)",
+            min_value=0.0,
+            max_value=50.0,
+            value=0.0,
+            step=0.5,
+            help="預期勞保老年給付＋勞退月領合計（選填）",
+        )
+        claim_age = st.number_input(
+            "勞保/勞退 請領年齡 (歲)",
+            min_value=55,
+            max_value=70,
+            value=60,
+            step=1,
+            help="勞退 60 歲可請領；勞保年金請領年齡逐步延後至 65 歲",
+        )
 pension_annual = pension_monthly_wan * 12 * 10_000  # NTD/年
 has_pension    = pension_annual > 0
 has_rental     = (include_re and (rental_annual > 0 or rm_annual > 0))
