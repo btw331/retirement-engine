@@ -363,14 +363,39 @@ else:
 
 
 with st.sidebar.expander("資產與提領", expanded=True):
-    A0_securities_wan = st.number_input(
-        "有價證券總額 (萬)",
-        min_value=0,
-        max_value=50_000,
-        value=3_000,
-        step=100,
-        help="股票、ETF、基金等流動性金融資產，以萬為單位",
-    )
+    if guide_mode:
+        st.markdown("**正資產（Assets）**")
+        A0_assets_wan = st.number_input(
+            "金融資產合計（不含房產，萬）",
+            min_value=0,
+            max_value=50_000,
+            value=3_000,
+            step=100,
+            key="a0_assets_wan",
+            help="股票、ETF、基金、現金等可快速變現資產（不含房產）。",
+        )
+        st.markdown("**負債（Liabilities）**")
+        A0_liab_wan = st.number_input(
+            "金融負債合計（信貸/卡債等，萬）",
+            min_value=0,
+            max_value=50_000,
+            value=0,
+            step=50,
+            key="a0_liab_wan",
+            help="不含房貸（房貸請在不動產區塊填寫）；此處用於把『金融正資產』轉成『可用淨資產』。",
+        )
+        A0_securities_wan = max(0, int(A0_assets_wan - A0_liab_wan))
+        st.caption(f"→ 可用淨金融資產（帶入引擎）= **{A0_securities_wan:,} 萬**")
+    else:
+        A0_securities_wan = st.number_input(
+            "有價證券總額 (萬)",
+            min_value=0,
+            max_value=50_000,
+            value=3_000,
+            step=100,
+            help="股票、ETF、基金等流動性金融資產，以萬為單位",
+        )
+
     W0_wan = st.number_input(
         "實質購買力 (萬/年)",
         min_value=10,
@@ -463,6 +488,7 @@ include_re = False
 re_home_wan = re_rental_wan = re_mortgage_wan = 0
 re_net_wan = 0
 re_liquidity_discount = 20
+re_net_wan_eff = 0
 rental_monthly_wan = 0.0
 rental_start_age_input = 65
 rm_start_age = 999
