@@ -598,20 +598,62 @@ if wizard_mode:
         dividend_tax_pct = float(st.session_state.get("dividend_tax_pct", dividend_tax_pct))
 
 else:
-    # 進階模式：保留既有完整側欄（後續段落仍會沿用）
-    pass
+    # 進階模式：關閉 Wizard 時顯示「全部選項」
+    use_asset_alloc = True
+    use_re_inputs = True
+    use_pension_inputs = True
+    use_cost_drag = True
+
+    with st.sidebar.expander("資產與提領（進階）", expanded=True):
+        A0_securities_wan = st.number_input(
+            "有價證券總額 (萬)",
+            min_value=0,
+            max_value=50_000,
+            value=int(A0_securities_wan),
+            step=100,
+            help="股票、ETF、基金等流動性金融資產，以萬為單位",
+        )
+        W0_wan = st.number_input(
+            "實質購買力 (萬/年)",
+            min_value=10,
+            max_value=500,
+            value=float(W0_wan),
+            step=5.0,
+            help="起始年全年生活費目標（含所有支出），以萬/年為單位",
+        )
+
+    with st.sidebar.expander("報酬與通膨（進階）", expanded=True):
+        inflation_pct = st.slider("預期通膨率 CPI (%)", 0.0, 8.0, float(inflation_pct), 0.5)
+        use_inferred_r = st.radio("實質報酬率 r 來源", ["依資產結構推論", "手動設定"], index=0)
+        if use_inferred_r == "手動設定":
+            r_pct = st.slider("預期實質報酬率 r（毛，%）", 0.0, 15.0, 4.0, 0.5)
+        else:
+            r_pct = None
+        medical_premium = st.slider("醫療溢價 i_m (CPI + %)", 0.0, 4.0, float(medical_premium), 0.1)
+
+    with st.sidebar.expander("成本／稅務拖累（進階，落實到引擎）", expanded=False):
+        product_mode = st.radio("ETF/基金配息模式", ["累積型（不配息）", "配息型（配息會被課稅）"], index=0)
+        expense_ratio_pct = st.slider("內扣費用率拖累（%/年）", 0.0, 2.0, float(expense_ratio_pct), 0.05)
+        friction_drag_pct = st.slider("交易/換股/追蹤誤差摩擦（%/年）", 0.0, 1.0, float(friction_drag_pct), 0.01)
+        dividend_yield_pct = st.slider("配息率（%/年，用於估算稅務拖累）", 0.0, 10.0, float(dividend_yield_pct), 0.5)
+        dividend_tax_pct = st.slider("配息稅負/扣繳率（%）", 0.0, 40.0, float(dividend_tax_pct), 1.0)
+
+    with st.sidebar.expander("年齡區間（進階）", expanded=True):
+        age_start = st.number_input("起始年齡 (歲)", 25, 70, int(age_start), 1)
+        age_end = st.number_input("目標年齡 (歲)", 70, 100, int(age_end), 1)
 
 # ── 不動產（選填）───────────────────────────────────────────────────────
-# ── 不動產（選填）───────────────────────────────────────────────────────
-include_re = False
-re_home_wan = re_rental_wan = re_mortgage_wan = 0
-re_net_wan = 0
-re_liquidity_discount = 20
-re_net_wan_eff = 0
-rental_monthly_wan = 0.0
-rental_start_age_input = 65
-rm_start_age = 999
-rm_monthly_wan = 0.0
+if not wizard_mode:
+    include_re = False
+    re_home_wan = re_rental_wan = re_mortgage_wan = 0
+    re_net_wan = 0
+    re_liquidity_discount = 20
+    re_net_wan_eff = 0
+    rental_monthly_wan = 0.0
+    rental_start_age_input = 65
+    rm_start_age = 999
+    rm_monthly_wan = 0.0
+
 if (not wizard_mode) and use_re_inputs:
     with st.sidebar.expander("🏠 不動產（選填）", expanded=True):
         st.caption("填寫後可將房產折後淨值計入初始資產，並以租金收入減少每年從有價證券的提領。")
