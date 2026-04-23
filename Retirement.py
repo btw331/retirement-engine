@@ -682,6 +682,10 @@ if (not wizard_mode) and use_re_inputs:
             rm_start_age   = 999
             rm_monthly_wan = 0.0
 
+# ── 將「萬」換算為引擎單位（NTD/年）────────────────────────────────────
+A0 = float(A0_securities_wan) * 10_000  # 有價證券（淨金融資產）
+W0 = float(W0_wan) * 10_000            # 年生活費目標（實質購買力）
+
 # 計算不動產對 A₀ 與租金現金流的貢獻（以折後淨值 re_net_wan_eff 計算）
 re_net_value   = re_net_wan_eff * 10_000   # 已套用流動性折扣
 rental_annual  = rental_monthly_wan * 12 * 10_000   # NTD/年（租金，獨立啟動年齡）
