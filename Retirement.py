@@ -382,10 +382,22 @@ with st.sidebar.expander("資產與提領", expanded=True):
             value=0,
             step=50,
             key="a0_liab_wan",
-            help="不含房貸（房貸請在不動產區塊填寫）；此處用於把『金融正資產』轉成『可用淨資產』。",
+            help="不含房貸；此處用於把『金融正資產』轉成『可用淨金融資產』。",
+        )
+        mortgage_wan = st.number_input(
+            "房貸餘額（萬）",
+            min_value=0,
+            max_value=20_000,
+            value=0,
+            step=50,
+            key="guide_mortgage_wan",
+            help="房貸屬於不動產的負債，會在不動產區塊自動帶入，並影響房產淨值（不會從金融資產中扣除）。",
         )
         A0_securities_wan = max(0, int(A0_assets_wan - A0_liab_wan))
-        st.caption(f"→ 可用淨金融資產（帶入引擎）= **{A0_securities_wan:,} 萬**")
+        st.caption(
+            f"→ 可用淨金融資產（帶入引擎）= **{A0_securities_wan:,} 萬**"
+            f"　｜　房貸：**{int(mortgage_wan):,} 萬**（計入房產淨值）"
+        )
     else:
         A0_securities_wan = st.number_input(
             "有價證券總額 (萬)",
@@ -503,7 +515,8 @@ if use_re_inputs:
                                      help="自住房屋目前市值，退休後居住成本已鎖定（不計入可提領現金流）")
     re_rental_wan  = st.number_input("出租房產市值 (萬)",   min_value=0, max_value=20_000, value=0,   step=100,
                                      help="出租物件的目前市值")
-    re_mortgage_wan= st.number_input("未償房貸餘額 (萬)",   min_value=0, max_value=20_000, value=0,   step=50,
+    _mort_default = int(min(20_000, max(0, int(st.session_state.get("guide_mortgage_wan", 0)))))
+    re_mortgage_wan= st.number_input("未償房貸餘額 (萬)",   min_value=0, max_value=20_000, value=_mort_default,   step=50,
                                      help="所有房產尚未還清的貸款餘額，自動從淨資產中扣除")
     re_net_wan     = max(0, re_home_wan + re_rental_wan - re_mortgage_wan)
 
