@@ -548,7 +548,8 @@ def _render_wizard() -> None:
                 st.rerun()
         with c2:
             if st.button("完成 ✅", key="wiz_done", use_container_width=True):
-                st.session_state["wiz_done"] = True
+                # 注意：不可寫入與 widget key 同名的 session_state（會觸發 StreamlitAPIException）
+                st.session_state["wiz_completed"] = True
                 st.success("已完成 Wizard，右側結果已更新。")
 
 
