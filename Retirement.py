@@ -615,8 +615,8 @@ else:
         )
         W0_wan = st.number_input(
             "實質購買力 (萬/年)",
-            min_value=10,
-            max_value=500,
+            min_value=10.0,
+            max_value=500.0,
             value=float(W0_wan),
             step=5.0,
             help="起始年全年生活費目標（含所有支出），以萬/年為單位",
