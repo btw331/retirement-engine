@@ -362,7 +362,9 @@ else:
     use_cost_drag = True
 
 
-with st.sidebar.expander("資產與提領", expanded=True):
+# 引導模式下讓資產/負債更顯眼（避免使用者以為沒改）
+_asset_box_title = "1｜資產/負債與生活費（引導）" if guide_mode else "資產與提領"
+with st.sidebar.expander(_asset_box_title, expanded=True):
     if guide_mode:
         st.markdown("**正資產（Assets）**")
         A0_assets_wan = st.number_input(
@@ -506,61 +508,75 @@ rental_start_age_input = 65
 rm_start_age = 999
 rm_monthly_wan = 0.0
 if use_re_inputs:
-    with st.sidebar.expander("🏠 不動產（選填）", expanded=False):
+    with st.sidebar.expander("🏠 不動產（選填）", expanded=guide_mode):
         st.caption("填寫後可將房產折後淨值計入初始資產，並以租金收入減少每年從有價證券的提領。")
         include_re = st.toggle("將不動產納入計算", value=False,
                                help="開啟後，房產折後淨值加入 A₀；租金收入自動抵銷部分年度提領")
-
-    re_home_wan    = st.number_input("自用住宅市值 (萬)",   min_value=0, max_value=20_000, value=0,   step=100,
-                                     help="自住房屋目前市值，退休後居住成本已鎖定（不計入可提領現金流）")
-    re_rental_wan  = st.number_input("出租房產市值 (萬)",   min_value=0, max_value=20_000, value=0,   step=100,
-                                     help="出租物件的目前市值")
-    _mort_default = int(min(20_000, max(0, int(st.session_state.get("guide_mortgage_wan", 0)))))
-    re_mortgage_wan= st.number_input("未償房貸餘額 (萬)",   min_value=0, max_value=20_000, value=_mort_default,   step=50,
-                                     help="所有房產尚未還清的貸款餘額，自動從淨資產中扣除")
-    re_net_wan     = max(0, re_home_wan + re_rental_wan - re_mortgage_wan)
-
-    re_liquidity_discount = st.slider(
-        "流動性折扣 (%)",
-        min_value=0, max_value=50, value=20, step=1,
-        help=(
-            "房產變現時的總摩擦成本估算，含：仲介費 2–6%、代書費、"
-            "房地合一稅 15–45%（依持有年數）、搬遷費等。"
-            "持有 10 年以上稅率 15%，建議最低折扣 18–20%；"
-            "持有 2–5 年稅率 35%，建議折扣 40–45%。"
-        ),
-    )
-    re_net_wan_eff = int(re_net_wan * (1 - re_liquidity_discount / 100))
-    if re_net_wan > 0:
-        st.caption(
-            f"房產市值淨值（市值 − 貸款）：**{re_net_wan:,} 萬**　"
-            f"→ 折後可用金額（−{re_liquidity_discount}%）：**{re_net_wan_eff:,} 萬**"
+        re_home_wan    = st.number_input(
+            "自用住宅市值 (萬)",
+            min_value=0, max_value=20_000, value=0, step=100,
+            help="自住房屋目前市值，退休後居住成本已鎖定（不計入可提領現金流）",
         )
-    else:
-        st.caption("房產淨值：**0 萬**")
+        re_rental_wan  = st.number_input(
+            "出租房產市值 (萬)",
+            min_value=0, max_value=20_000, value=0, step=100,
+            help="出租物件的目前市值",
+        )
+        _mort_default = int(min(20_000, max(0, int(st.session_state.get("guide_mortgage_wan", 0)))))
+        re_mortgage_wan = st.number_input(
+            "未償房貸餘額 (萬)",
+            min_value=0, max_value=20_000, value=_mort_default, step=50,
+            help="所有房產尚未還清的貸款餘額，自動從淨資產中扣除",
+        )
+        re_net_wan     = max(0, re_home_wan + re_rental_wan - re_mortgage_wan)
 
-    st.markdown("**租金收入**")
-    rental_monthly_wan = st.number_input(
-        "月租金淨收入 (萬/月)",
-        min_value=0.0, max_value=100.0, value=0.0, step=0.5,
-        help="已扣除房屋稅、管理費、維修費、空置率後的實際到手月租金（台灣各區淨報酬率約 1.5–3.5%）",
-    )
-    rental_start_age_input = st.number_input(
-        "租金開始年齡 (歲)",
-        min_value=40, max_value=85, value=int(65), step=1,
-        help="若物件已出租可設等於起始年齡；尚未出租可設未來預計年齡",
-    )
+        re_liquidity_discount = st.slider(
+            "流動性折扣 (%)",
+            min_value=0, max_value=50, value=20, step=1,
+            help=(
+                "房產變現時的總摩擦成本估算，含：仲介費 2–6%、代書費、"
+                "房地合一稅 15–45%（依持有年數）、搬遷費等。"
+                "持有 10 年以上稅率 15%，建議最低折扣 18–20%；"
+                "持有 2–5 年稅率 35%，建議折扣 40–45%。"
+            ),
+        )
+        re_net_wan_eff = int(re_net_wan * (1 - re_liquidity_discount / 100))
+        if re_net_wan > 0:
+            st.caption(
+                f"房產市值淨值（市值 − 貸款）：**{re_net_wan:,} 萬**　"
+                f"→ 折後可用金額（−{re_liquidity_discount}%）：**{re_net_wan_eff:,} 萬**"
+            )
+        else:
+            st.caption("房產淨值：**0 萬**")
 
-    st.markdown("**以房養老（選填）**")
-    use_reverse_mortgage = st.toggle("啟用以房養老", value=False,
-                                     help="達到啟動年齡時將房屋抵押給銀行，換取每月固定收入直至身故（台灣各行 2025 年利率約 2.16–4%）")
-    if use_reverse_mortgage:
-        rm_start_age   = st.number_input("以房養老啟動年齡 (歲)", min_value=60, max_value=90, value=80, step=1)
-        rm_monthly_wan = st.number_input("以房養老月領 (萬/月)", min_value=0.0, max_value=50.0, value=3.0, step=0.5,
-                                         help="依房產市值與銀行方案估算，一般約為房產價值 × 0.2–0.3% / 月")
-    else:
-        rm_start_age   = 999
-        rm_monthly_wan = 0.0
+        st.markdown("**租金收入**")
+        rental_monthly_wan = st.number_input(
+            "月租金淨收入 (萬/月)",
+            min_value=0.0, max_value=100.0, value=0.0, step=0.5,
+            help="已扣除房屋稅、管理費、維修費、空置率後的實際到手月租金（台灣各區淨報酬率約 1.5–3.5%）",
+        )
+        rental_start_age_input = st.number_input(
+            "租金開始年齡 (歲)",
+            min_value=40, max_value=85, value=int(65), step=1,
+            help="若物件已出租可設等於起始年齡；尚未出租可設未來預計年齡",
+        )
+
+        st.markdown("**以房養老（選填）**")
+        use_reverse_mortgage = st.toggle(
+            "啟用以房養老",
+            value=False,
+            help="達到啟動年齡時將房屋抵押給銀行，換取每月固定收入直至身故（台灣各行 2025 年利率約 2.16–4%）",
+        )
+        if use_reverse_mortgage:
+            rm_start_age   = st.number_input("以房養老啟動年齡 (歲)", min_value=60, max_value=90, value=80, step=1)
+            rm_monthly_wan = st.number_input(
+                "以房養老月領 (萬/月)",
+                min_value=0.0, max_value=50.0, value=3.0, step=0.5,
+                help="依房產市值與銀行方案估算，一般約為房產價值 × 0.2–0.3% / 月",
+            )
+        else:
+            rm_start_age   = 999
+            rm_monthly_wan = 0.0
 
 # 計算不動產對 A₀ 與租金現金流的貢獻（以折後淨值 re_net_wan_eff 計算）
 re_net_value   = re_net_wan_eff * 10_000   # 已套用流動性折扣
