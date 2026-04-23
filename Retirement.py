@@ -763,79 +763,80 @@ if include_re and re_net_wan > 0:
 # Wizard 模式下僅在 Step 2 顯示（避免每一步都被大量參數干擾）
 _wiz_step = int(st.session_state.get("wiz_step", 1)) if wizard_mode else 0
 _show_asset_alloc = (not wizard_mode) or (_wiz_step == 2)
+inferred_r = float(st.session_state.get("r_pct_inferred", 4.0))  # 若未顯示配置區，提供安全預設
 if _show_asset_alloc:
     with st.sidebar.expander("📈 1. 有價證券配置", expanded=use_asset_alloc):
         asset_input_mode = st.radio(
-        "輸入方式",
-        ["填寫實際金額 (萬)", "填寫比例 (%)"],
-        index=0,
-        horizontal=True,
-    )
+            "輸入方式",
+            ["填寫實際金額 (萬)", "填寫比例 (%)"],
+            index=0,
+            horizontal=True,
+        )
 
-    # 三段式報酬情境預設
-    return_scenario = st.radio(
-        "報酬情境假設",
-        ["保守", "中性", "積極"],
-        index=0,
-        horizontal=True,
-        help=(
-            "保守：低於歷史均值，適合悲觀情境規劃\n"
-            "中性：約歷史均值折半，平衡考量\n"
-            "積極：接近歷史長期年化實質報酬\n\n"
-            "歷史參考：0050 名目年化約11.6%（2003-2024）；"
-            "VTI 名目年化約12.3%（近10年）；均扣除通膨後為實質報酬"
-        ),
-    )
-    _r_table = {
-        #            美股個股  美股ETF  台股個股  台股ETF  全球ETF
-        "保守":   (   6.0,    5.0,    5.0,    4.0,    4.5),
-        "中性":   (   7.0,    6.5,    6.5,    5.5,    5.5),
-        "積極":   (   9.0,    8.5,    8.5,    7.0,    7.5),
-    }
-    r_us_stock, r_us_etf, r_tw_stock, r_tw_etf, r_global = _r_table[return_scenario]
-    st.caption(
-        f"各類實質報酬假設 — 美股個股 **{r_us_stock}%** · 美股ETF **{r_us_etf}%** · "
-        f"台股個股 **{r_tw_stock}%** · 台股ETF **{r_tw_etf}%** · 全球ETF **{r_global}%**"
-    )
+        # 三段式報酬情境預設
+        return_scenario = st.radio(
+            "報酬情境假設",
+            ["保守", "中性", "積極"],
+            index=0,
+            horizontal=True,
+            help=(
+                "保守：低於歷史均值，適合悲觀情境規劃\n"
+                "中性：約歷史均值折半，平衡考量\n"
+                "積極：接近歷史長期年化實質報酬\n\n"
+                "歷史參考：0050 名目年化約11.6%（2003-2024）；"
+                "VTI 名目年化約12.3%（近10年）；均扣除通膨後為實質報酬"
+            ),
+        )
+        _r_table = {
+            #            美股個股  美股ETF  台股個股  台股ETF  全球ETF
+            "保守":   (   6.0,    5.0,    5.0,    4.0,    4.5),
+            "中性":   (   7.0,    6.5,    6.5,    5.5,    5.5),
+            "積極":   (   9.0,    8.5,    8.5,    7.0,    7.5),
+        }
+        r_us_stock, r_us_etf, r_tw_stock, r_tw_etf, r_global = _r_table[return_scenario]
+        st.caption(
+            f"各類實質報酬假設 — 美股個股 **{r_us_stock}%** · 美股ETF **{r_us_etf}%** · "
+            f"台股個股 **{r_tw_stock}%** · 台股ETF **{r_tw_etf}%** · 全球ETF **{r_global}%**"
+        )
 
-    if asset_input_mode == "填寫實際金額 (萬)":
-        amt_us_stock = st.number_input("美股個股 (萬)",        min_value=0, max_value=100_000, value=0,    step=50)
-        amt_us_etf   = st.number_input("美股 ETF  (萬)",       min_value=0, max_value=100_000, value=600,  step=50)
-        amt_tw_stock = st.number_input("台股個股 (萬)",        min_value=0, max_value=100_000, value=900,  step=50)
-        amt_tw_etf   = st.number_input("台股 ETF  (萬)",       min_value=0, max_value=100_000, value=1500, step=50)
-        amt_global   = st.number_input("全球 ETF (VWRA/VT) (萬)", min_value=0, max_value=100_000, value=0, step=50,
-                                       help="VWRA（全球市場 ETF）或 VT 等全球分散型基金，涵蓋 50+ 國家，降低單一市場集中度風險")
-        total_amt = amt_us_stock + amt_us_etf + amt_tw_stock + amt_tw_etf + amt_global
-        if total_amt > 0:
-            pct_us_s  = amt_us_stock / total_amt * 100
-            pct_us_e  = amt_us_etf   / total_amt * 100
-            pct_tw_s  = amt_tw_stock / total_amt * 100
-            pct_tw_e  = amt_tw_etf   / total_amt * 100
-            pct_glb   = amt_global   / total_amt * 100
+        if asset_input_mode == "填寫實際金額 (萬)":
+            amt_us_stock = st.number_input("美股個股 (萬)",        min_value=0, max_value=100_000, value=0,    step=50)
+            amt_us_etf   = st.number_input("美股 ETF  (萬)",       min_value=0, max_value=100_000, value=600,  step=50)
+            amt_tw_stock = st.number_input("台股個股 (萬)",        min_value=0, max_value=100_000, value=900,  step=50)
+            amt_tw_etf   = st.number_input("台股 ETF  (萬)",       min_value=0, max_value=100_000, value=1500, step=50)
+            amt_global   = st.number_input("全球 ETF (VWRA/VT) (萬)", min_value=0, max_value=100_000, value=0, step=50,
+                                           help="VWRA（全球市場 ETF）或 VT 等全球分散型基金，涵蓋 50+ 國家，降低單一市場集中度風險")
+            total_amt = amt_us_stock + amt_us_etf + amt_tw_stock + amt_tw_etf + amt_global
+            if total_amt > 0:
+                pct_us_s  = amt_us_stock / total_amt * 100
+                pct_us_e  = amt_us_etf   / total_amt * 100
+                pct_tw_s  = amt_tw_stock / total_amt * 100
+                pct_tw_e  = amt_tw_etf   / total_amt * 100
+                pct_glb   = amt_global   / total_amt * 100
+            else:
+                pct_us_s = pct_us_e = pct_tw_s = pct_tw_e = pct_glb = 20.0
+            st.caption(f"合計：**{total_amt:,} 萬**（A₀ 以上方「初始資產」為準）")
         else:
-            pct_us_s = pct_us_e = pct_tw_s = pct_tw_e = pct_glb = 20.0
-        st.caption(f"合計：**{total_amt:,} 萬**（A₀ 以上方「初始資產」為準）")
-    else:
-        pct_us_stock = st.slider("美股個股 (%)",           0, 100, 0,  5)
-        pct_us_etf   = st.slider("美股 ETF  (%)",          0, 100, 20, 5)
-        pct_tw_stock = st.slider("台股個股 (%)",           0, 100, 30, 5)
-        pct_tw_etf   = st.slider("台股 ETF  (%)",          0, 100, 40, 5)
-        pct_global   = st.slider("全球 ETF (VWRA/VT) (%)", 0, 100, 10, 5,
-                                 help="VWRA/VT 等全球分散型，涵蓋美國以外的已開發與新興市場")
-        total_pct = pct_us_stock + pct_us_etf + pct_tw_stock + pct_tw_etf + pct_global
-        if total_pct != 100:
-            st.caption(f"⚠️ 目前加總 {total_pct}%，建議為 100%。以下推論依比例換算。")
-        scale    = 100 / total_pct if total_pct > 0 else 1
-        pct_us_s = pct_us_stock * scale
-        pct_us_e = pct_us_etf   * scale
-        pct_tw_s = pct_tw_stock * scale
-        pct_tw_e = pct_tw_etf   * scale
-        pct_glb  = pct_global   * scale
+            pct_us_stock = st.slider("美股個股 (%)",           0, 100, 0,  5)
+            pct_us_etf   = st.slider("美股 ETF  (%)",          0, 100, 20, 5)
+            pct_tw_stock = st.slider("台股個股 (%)",           0, 100, 30, 5)
+            pct_tw_etf   = st.slider("台股 ETF  (%)",          0, 100, 40, 5)
+            pct_global   = st.slider("全球 ETF (VWRA/VT) (%)", 0, 100, 10, 5,
+                                     help="VWRA/VT 等全球分散型，涵蓋美國以外的已開發與新興市場")
+            total_pct = pct_us_stock + pct_us_etf + pct_tw_stock + pct_tw_etf + pct_global
+            if total_pct != 100:
+                st.caption(f"⚠️ 目前加總 {total_pct}%，建議為 100%。以下推論依比例換算。")
+            scale    = 100 / total_pct if total_pct > 0 else 1
+            pct_us_s = pct_us_stock * scale
+            pct_us_e = pct_us_etf   * scale
+            pct_tw_s = pct_tw_stock * scale
+            pct_tw_e = pct_tw_etf   * scale
+            pct_glb  = pct_global   * scale
 
-    inferred_r = (pct_us_s * r_us_stock + pct_us_e * r_us_etf +
-                  pct_tw_s * r_tw_stock + pct_tw_e * r_tw_etf +
-                  pct_glb  * r_global) / 100
-    st.caption(f"推論實質報酬率：**{inferred_r:.1f}%**（加權平均）")
+        inferred_r = (pct_us_s * r_us_stock + pct_us_e * r_us_etf +
+                      pct_tw_s * r_tw_stock + pct_tw_e * r_tw_etf +
+                      pct_glb  * r_global) / 100
+        st.caption(f"推論實質報酬率：**{inferred_r:.1f}%**（加權平均）")
 
 # 資產結構計算完成後，填入推論報酬率
 if r_pct is None:
