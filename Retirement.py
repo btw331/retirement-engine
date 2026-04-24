@@ -541,38 +541,40 @@ def _render_wizard() -> None:
             st.markdown("---")
             st.session_state["use_re_inputs"] = st.checkbox("我有不動產/房貸/租金/以房養老", value=bool(st.session_state.get("use_re_inputs", False)), key="wiz_use_re")
             if st.session_state["use_re_inputs"]:
-                st.markdown("**房產與房貸**")
-                st.session_state["re_home_wan"] = st.number_input("自用住宅市值 (萬)", 0, 20_000, int(st.session_state.get("re_home_wan", 0)), 100, key="wiz_re_home")
-                st.session_state["re_rental_wan"] = st.number_input("出租房產市值 (萬)", 0, 20_000, int(st.session_state.get("re_rental_wan", 0)), 100, key="wiz_re_rental")
-                st.session_state["guide_mortgage_wan"] = st.number_input("房貸餘額 (萬)", 0, 20_000, int(st.session_state.get("guide_mortgage_wan", 0)), 50, key="wiz_re_mort")
-                st.session_state["re_liquidity_discount"] = st.slider("流動性折扣 (%)", 0, 50, int(st.session_state.get("re_liquidity_discount", 20)), 1, key="wiz_re_disc")
+                st.caption("小提醒：不動產屬於進階題，若你只是先看退休可行性，可先略過這段。")
+                with st.expander("🏠 不動產（選填）", expanded=False):
+                    st.markdown("**房產與房貸**")
+                    st.session_state["re_home_wan"] = st.number_input("自用住宅市值 (萬)", 0, 20_000, int(st.session_state.get("re_home_wan", 0)), 100, key="wiz_re_home")
+                    st.session_state["re_rental_wan"] = st.number_input("出租房產市值 (萬)", 0, 20_000, int(st.session_state.get("re_rental_wan", 0)), 100, key="wiz_re_rental")
+                    st.session_state["guide_mortgage_wan"] = st.number_input("房貸餘額 (萬)", 0, 20_000, int(st.session_state.get("guide_mortgage_wan", 0)), 50, key="wiz_re_mort")
+                    st.session_state["re_liquidity_discount"] = st.slider("流動性折扣 (%)", 0, 50, int(st.session_state.get("re_liquidity_discount", 20)), 1, key="wiz_re_disc")
 
-                st.markdown("**租金/以房養老（可選）**")
-                st.session_state["rental_monthly_wan"] = st.number_input(
-                    "月租金淨收入 (萬/月)",
-                    0.0,
-                    100.0,
-                    float(st.session_state.get("rental_monthly_wan", 0.0)),
-                    0.5,
-                    key="wiz_rent_m",
-                    help=(
-                        "請填「實際可拿來補生活費的到手金額」（淨現金流），而不是合約租金。"
-                        "建議先用教育庫的『出租房產淨收益／租金折現』試算；若不確定，可先用『毛租金×0.75』作保守淨值。"
-                    ),
-                )
-                st.caption(
-                    "保守速算：淨租金（月）≈ 房產市值 × 年淨殖利率(1%～2.5%) ÷ 12。"
-                    f"　→ 去做租金折現試算：[教育庫｜不動產收益護欄（Income Floor）]"
-                    f"({_qs(nav='edu', edu_category='房產／資產負債表／心理帳戶', edu_topic='16｜不動產收益護欄：Income Floor 與折現風險調整')})"
-                )
-                st.session_state["rental_start_age_input"] = st.number_input(
-                    "租金開始年齡 (歲)", 40, 85, int(st.session_state.get("rental_start_age_input", 65)), 1, key="wiz_rent_age"
-                )
-                use_rm = st.checkbox("啟用以房養老", value=bool(st.session_state.get("use_rm", False)), key="wiz_use_rm")
-                st.session_state["use_rm"] = use_rm
-                if use_rm:
-                    st.session_state["rm_start_age"] = st.number_input("以房養老啟動年齡 (歲)", 60, 90, int(st.session_state.get("rm_start_age", 80)), 1, key="wiz_rm_age")
-                    st.session_state["rm_monthly_wan"] = st.number_input("以房養老月領 (萬/月)", 0.0, 50.0, float(st.session_state.get("rm_monthly_wan", 3.0)), 0.5, key="wiz_rm_m")
+                    st.markdown("**租金/以房養老（可選）**")
+                    st.session_state["rental_monthly_wan"] = st.number_input(
+                        "月租金淨收入 (萬/月)",
+                        0.0,
+                        100.0,
+                        float(st.session_state.get("rental_monthly_wan", 0.0)),
+                        0.5,
+                        key="wiz_rent_m",
+                        help=(
+                            "請填「實際可拿來補生活費的到手金額」（淨現金流），而不是合約租金。"
+                            "建議先用教育庫的『出租房產淨收益／租金折現』試算；若不確定，可先用『毛租金×0.75』作保守淨值。"
+                        ),
+                    )
+                    st.caption(
+                        "保守速算：淨租金（月）≈ 房產市值 × 年淨殖利率(1%～2.5%) ÷ 12。"
+                        f"　→ 去做租金折現試算：[教育庫｜不動產收益護欄（Income Floor）]"
+                        f"({_qs(nav='edu', edu_category='房產／資產負債表／心理帳戶', edu_topic='16｜不動產收益護欄：Income Floor 與折現風險調整')})"
+                    )
+                    st.session_state["rental_start_age_input"] = st.number_input(
+                        "租金開始年齡 (歲)", 40, 85, int(st.session_state.get("rental_start_age_input", 65)), 1, key="wiz_rent_age"
+                    )
+                    use_rm = st.checkbox("啟用以房養老", value=bool(st.session_state.get("use_rm", False)), key="wiz_use_rm")
+                    st.session_state["use_rm"] = use_rm
+                    if use_rm:
+                        st.session_state["rm_start_age"] = st.number_input("以房養老啟動年齡 (歲)", 60, 90, int(st.session_state.get("rm_start_age", 80)), 1, key="wiz_rm_age")
+                        st.session_state["rm_monthly_wan"] = st.number_input("以房養老月領 (萬/月)", 0.0, 50.0, float(st.session_state.get("rm_monthly_wan", 3.0)), 0.5, key="wiz_rm_m")
 
             st.markdown("---")
             st.session_state["use_pension_inputs"] = st.checkbox("我有勞保/勞退月領", value=bool(st.session_state.get("use_pension_inputs", False)), key="wiz_use_pen")
@@ -954,6 +956,16 @@ if (not wizard_mode) and use_re_inputs:
             f"｜[教育庫｜租金折現（Income Floor）]"
             f"({_qs(nav='edu', edu_category='房產／資產負債表／心理帳戶', edu_topic='16｜不動產收益護欄：Income Floor 與折現風險調整')})"
         )
+        # 可信度提示：以「出租房產市值」推估淨殖利率（避免把毛租金誤填為淨租金）
+        if re_rental_wan > 0 and rental_monthly_wan > 0:
+            _net_yield_est = (rental_monthly_wan * 12) / float(re_rental_wan) * 100
+            _yield_note = (
+                "⚠️ 偏低（可能合理：台北精華區常見）" if _net_yield_est < 1.0 else
+                "✅ 常見區間" if _net_yield_est <= 2.5 else
+                "⚠️ 偏高，請確認是否已扣空置/維修/稅費" if _net_yield_est <= 3.5 else
+                "❗ 異常偏高，極可能把毛租金當淨租金"
+            )
+            st.caption(f"淨殖利率（估）≈ **{_net_yield_est:.2f}%**　{_yield_note}")
         rental_start_age_input = st.number_input(
             "租金開始年齡 (歲)",
             min_value=40, max_value=85, value=int(65), step=1,
@@ -1198,6 +1210,19 @@ if page_id == "retire":
             + (" · 推論" if use_inferred_r == "依資產結構推論" else " · 手動"),
         )
 
+    # ── 下一步建議（把指標轉成可行動的調整）────────────────────────────
+    _next_steps: list[str] = []
+    if IWR >= 4.0:
+        _next_steps.append("IWR 偏高：優先降低 **W₀**、延後目標年齡/退休時點，或提高可投資資產 **A₀**。")
+    else:
+        _next_steps.append("IWR 在可控區：建議以 **GK 護欄**作為預設策略，讓市場好壞自動調節支出。")
+    if not has_pension and not (include_re and (rental_annual > 0 or rm_annual > 0)):
+        _next_steps.append("底層現金流（Income Floor）偏弱：可評估勞保/勞退、租金（保守折現後）或其他穩定收入，以降低有效提領率。")
+    if include_re and rental_monthly_wan > 0:
+        _next_steps.append("已填租金：請確認你填的是『淨租金』而非毛租金；不確定時先用『毛×0.75』保守化，或到教育庫做折現試算。")
+    if _next_steps:
+        st.info("**下一步建議（最少動作）**\n\n" + "\n".join([f"- {s}" for s in _next_steps[:3]]))
+
     cond_rows = [
         ("A₀ 初始資產", f"NTD {_fmt_currency(A0)}（{_fmt_wan(A0)}）"),
         ("實質購買力 W₀", f"NTD {_fmt_currency(W0)}/年（{_fmt_wan(W0)}）"),
@@ -1433,25 +1458,46 @@ A_n = A₀ − W × n                                         （r = 0 時）
 此法補充確定性模型無法量化的 **SORR（序列報酬風險）**，是業界最標準的退休規劃驗證方法。
         """)
 
+        mc_mode = st.radio(
+            "模擬模式",
+            ["標準（建議）", "壓力測試（保守）", "進階（自行調參）"],
+            index=0,
+            horizontal=True,
+            help="標準：少量參數即可得到成功率。壓力測試：自動採用肥尾/負偏態等保守設定。進階：展開全部參數。",
+        )
         mc_row1_c1, mc_row1_c2, mc_row1_c3 = st.columns([2, 1, 1])
         with mc_row1_c1:
-            mc_std = st.slider(
-                "年報酬率標準差 σ (%)",
-                min_value=5.0, max_value=30.0, value=15.0, step=1.0,
-                help="股票型組合歷史波動率約 15–20%；保守組合可設 10–12%；0050/S&P500 約 18–20%",
-            )
+            if mc_mode == "進階（自行調參）":
+                mc_std = st.slider(
+                    "年報酬率標準差 σ (%)",
+                    min_value=5.0, max_value=30.0, value=15.0, step=1.0,
+                    help="股票型組合歷史波動率約 15–20%；保守組合可設 10–12%；0050/S&P500 約 18–20%",
+                )
+            elif mc_mode == "壓力測試（保守）":
+                mc_std = 18.0
+                st.caption("年波動率 σ：壓力測試固定為 **18%**（偏保守）。")
+            else:
+                mc_std = 15.0
+                st.caption("年波動率 σ：標準模式固定為 **15%**。")
         with mc_row1_c2:
-            mc_dist = st.radio(
-                "報酬率分布",
-                ["常態分布", "t 分布（肥尾）", "歷史 Bootstrap"],
-                horizontal=True,
-                help=(
-                    "常態分布：標準假設，計算快速\n"
-                    "t 分布：模擬金融市場肥尾（極端漲跌比常態更頻繁），尾部風險通常較常態更高\n"
-                    "歷史 Bootstrap：直接從台灣/美股 50 年歷史實質報酬重抽樣，"
-                    "保留真實偏態與肥尾，σ 由歷史資料決定（忽略上方 σ 設定）"
-                ),
-            )
+            if mc_mode == "進階（自行調參）":
+                mc_dist = st.radio(
+                    "報酬率分布",
+                    ["常態分布", "t 分布（肥尾）", "歷史 Bootstrap"],
+                    horizontal=True,
+                    help=(
+                        "常態分布：標準假設，計算快速\n"
+                        "t 分布：模擬金融市場肥尾（極端漲跌比常態更頻繁），尾部風險通常較常態更高\n"
+                        "歷史 Bootstrap：直接從台灣/美股 50 年歷史實質報酬重抽樣，"
+                        "保留真實偏態與肥尾，σ 由歷史資料決定（忽略上方 σ 設定）"
+                    ),
+                )
+            elif mc_mode == "壓力測試（保守）":
+                mc_dist = "t 分布（肥尾）"
+                st.caption("分布：壓力測試固定為 **t 分布（肥尾 + 負偏態）**。")
+            else:
+                mc_dist = "常態分布"
+                st.caption("分布：標準模式固定為 **常態分布**。")
         with mc_row1_c3:
             mc_strategy = st.radio(
                 "模擬策略",
@@ -1464,7 +1510,10 @@ A_n = A₀ − W × n                                         （r = 0 時）
         mc_use_bootstrap = mc_dist == "歷史 Bootstrap"
         mc_t_df   = 7    # 預設自由度
         mc_t_skew = 0.0  # 預設偏態（對稱）
-        if mc_use_t:
+        if mc_use_t and mc_mode == "壓力測試（保守）":
+            mc_t_df = 7
+            mc_t_skew = -0.3
+        if mc_use_t and mc_mode == "進階（自行調參）":
             _t_col1, _t_col2 = st.columns(2)
             with _t_col1:
                 mc_t_df = st.slider(
@@ -1508,7 +1557,11 @@ A_n = A₀ − W × n                                         （r = 0 時）
         # ── 通膨隨機化選項（非 Bootstrap 模式才有意義）──────────────────
         mc_infl_rand = False
         mc_infl_std  = 0.8
-        if not mc_use_bootstrap:
+        if not mc_use_bootstrap and mc_mode == "壓力測試（保守）":
+            mc_infl_rand = True
+            mc_infl_std = 1.2
+            st.caption("通膨：壓力測試開啟通膨隨機化（σ_CPI=1.2%）。")
+        if (not mc_use_bootstrap) and (mc_mode == "進階（自行調參）"):
             mc_infl_rand = st.toggle(
                 "通膨隨機化",
                 value=False,
