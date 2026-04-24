@@ -389,6 +389,75 @@ def run_dynamic_projection(
 
     return max(0, A)
 
+
+@st.cache_data
+def _solve_w0_to_zero_fixed(
+    *,
+    A0_eff: float,
+    r_pct: float,
+    n_years: int,
+    age_start: int,
+    med_premium_pct: float,
+    pension_annual: float,
+    claim_age: int,
+    rental_annual: float,
+    rental_start_age: int,
+    rm_annual: float,
+    rm_start_age: int,
+    w0_guess: float,
+) -> float:
+    """
+    求解「固定提領」下，W0（總支出目標）提高到哪裡會在目標年齡剛好歸零。
+    - 使用 run_dynamic_projection（含被動收入/醫療溢價邏輯），以二分搜尋求解。
+    - 回傳 W0_zero（NTD/年，實質購買力）。
+    """
+    if A0_eff <= 0 or n_years <= 0:
+        return 0.0
+
+    def f(w0_total: float) -> float:
+        return float(run_dynamic_projection(
+            A0_eff,
+            float(w0_total),
+            float(r_pct),
+            int(n_years),
+            int(age_start),
+            strategy="fixed",
+            med_premium_pct=float(med_premium_pct),
+            pension_annual=float(pension_annual),
+            claim_age=int(claim_age),
+            rental_annual=float(rental_annual),
+            rental_start_age=int(rental_start_age),
+            rm_annual=float(rm_annual),
+            rm_start_age=int(rm_start_age),
+        ))
+
+    # 先找上界 hi：使得 f(hi)=0（或足夠接近 0）
+    lo = 0.0
+    hi = max(float(w0_guess), 1.0)
+    v_hi = f(hi)
+    # 若 hi 太小，逐步放大
+    for _ in range(40):
+        if v_hi <= 0.0:
+            break
+        hi *= 1.5
+        if hi > A0_eff * 20:  # 夠寬的上界，避免無限放大
+            break
+        v_hi = f(hi)
+
+    # 若即使很大的 hi 仍不歸零，代表幾乎怎麼提都不會歸零（極罕見，通常是 W0=0 或 r 非常高）
+    if f(hi) > 0.0:
+        return hi
+
+    # 二分搜尋
+    for _ in range(60):
+        mid = (lo + hi) / 2.0
+        v_mid = f(mid)
+        if v_mid > 0:
+            lo = mid
+        else:
+            hi = mid
+    return float((lo + hi) / 2.0)
+
 st.set_page_config(
     page_title="退休規劃大師",
     page_icon="📊",
@@ -1209,6 +1278,80 @@ if page_id == "retire":
             f"毛 {r_pct_gross:.2f}% − 拖累 {r_drag_pct:.2f}% · 通膨 {inflation_pct}% · 醫療+{medical_premium}%"
             + (" · 推論" if use_inferred_r == "依資產結構推論" else " · 手動"),
         )
+
+    # ── 核心結果（放在最上方：成功率 / 終值 / 歸零臨界提領率）────────────
+    n_years = max(1, age_end - age_start)
+    _strat_label = str(st.session_state.get("strategy_choice", "GK 護欄"))
+    _strat_map_ui = {"固定提領": "fixed", "消費微笑曲線": "smile", "GK 護欄": "gk"}
+    _current_strat = _strat_map_ui.get(_strat_label, "gk")
+    _kw_core = dict(
+        pension_annual=float(pension_annual),
+        claim_age=int(claim_age),
+        rental_annual=float(rental_annual),
+        rental_start_age=int(rental_start_age_input),
+        rm_annual=float(rm_annual),
+        rm_start_age=int(rm_start_age),
+    )
+
+    # 1) 到目標年齡剩餘資產（確定性基準路徑；含醫療溢價與被動收入）
+    _final_base = float(run_dynamic_projection(
+        A0_eff,
+        W0,
+        float(r_pct),
+        int(n_years),
+        int(age_start),
+        strategy=_current_strat,
+        med_premium_pct=float(medical_premium),
+        **_kw_core,
+    ))
+
+    # 2) 成功率（蒙地卡羅：標準假設；用現行策略）
+    _mc_sr, _mc_p10, _mc_p50, _mc_p90 = _run_monte_carlo(
+        A0_eff,
+        W0,
+        float(r_pct),
+        15.0,  # σ 固定為標準模式 15%
+        int(n_years),
+        _current_strat,
+        float(pension_annual),
+        int(claim_age),
+        int(age_start),
+        med_premium_pct=float(medical_premium),
+        dist_mode="normal",
+        rental_annual=float(rental_annual),
+        rental_start_age=int(rental_start_age_input),
+        rm_annual=float(rm_annual),
+        rm_start_age=int(rm_start_age),
+        inflation_randomize=False,
+        inflation_mean_pct=float(inflation_pct),
+        inflation_std_pct=0.8,
+    )
+
+    # 3) 固定提領下「剛好歸零」的臨界提領率（確定性上限）
+    _w0_zero = _solve_w0_to_zero_fixed(
+        A0_eff=float(A0_eff),
+        r_pct=float(r_pct),
+        n_years=int(n_years),
+        age_start=int(age_start),
+        med_premium_pct=float(medical_premium),
+        pension_annual=float(pension_annual),
+        claim_age=int(claim_age),
+        rental_annual=float(rental_annual),
+        rental_start_age=int(rental_start_age_input),
+        rm_annual=float(rm_annual),
+        rm_start_age=int(rm_start_age),
+        w0_guess=float(W0),
+    )
+    _iwr_zero = (max(0.0, _w0_zero - float(_passive_at_start)) / float(A0_eff) * 100) if A0_eff > 0 else 0.0
+
+    k1, k2, k3 = st.columns(3)
+    with k1:
+        st.metric("退休成功率（標準蒙地卡羅）", f"{_mc_sr:.1f}%", "10,000 次模擬 · σ=15% · 常態")
+    with k2:
+        st.metric(f"{age_end} 歲剩餘資產（基準）", _fmt_asset(_final_base), f"策略：{_strat_label}")
+    with k3:
+        st.metric("固定提領：剛好歸零的臨界 IWR", f"{_iwr_zero:.2f}%", f"等效 W₀≈{_fmt_wan(_w0_zero)}/年")
+    st.caption("提示：『臨界 IWR』是確定性上限（固定提領、固定報酬假設）；實務仍應看蒙地卡羅成功率與壓力測試。")
 
     # ── 下一步建議（把指標轉成可行動的調整）────────────────────────────
     _next_steps: list[str] = []
