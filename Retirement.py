@@ -1340,7 +1340,7 @@ if page_id == "retire":
             st.metric(
                 f"{age_end} 歲剩餘資產（基準）",
                 _fmt_asset(_final_base),
-                f"折算成 2026 年購買力：每年約可支配 {_fmt_wan(_pwr_annual)}（約 {_pwr_monthly_wan:.1f} 萬/月）",
+                f"以 2026 年購買力計算：等同擁有 **{_fmt_asset(_final_base)}** 的資產",
             )
         with k3:
             st.metric("固定提領：剛好歸零的臨界 IWR", f"{_iwr_zero:.2f}%", f"換成生活費：約每年 {_fmt_wan(_w0_zero)}")
