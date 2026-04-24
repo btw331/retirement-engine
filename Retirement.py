@@ -1264,22 +1264,7 @@ if page_id == "retire":
     st.title("退休規劃大師")
     st.caption(f"50 年長週期退休財務工程與資產動態管理 (2026–2076) · 金額以 2026 實質購買力計價，預設通膨 {inflation_pct}%")
 
-    c1, c2, c3, c4 = st.columns(4)
-    with c1:
-        st.metric("初始提領率 IWR", f"{IWR:.2f}%", "安全邊界 4%" if IWR < 4 else "高於 4%")
-    with c2:
-        st.metric("繁榮護欄 (加薪觸發)", f"{gk_lower:.2f}%", "資產漲多時加薪 10%")
-    with c3:
-        st.metric("保全護欄 (減薪觸發)", f"{gk_upper:.2f}%", "資產跌多時減薪 10%")
-    with c4:
-        st.metric(
-            "實質報酬 r（淨）",
-            f"{r_pct:.2f}%",
-            f"毛 {r_pct_gross:.2f}% − 拖累 {r_drag_pct:.2f}% · 通膨 {inflation_pct}% · 醫療+{medical_premium}%"
-            + (" · 推論" if use_inferred_r == "依資產結構推論" else " · 手動"),
-        )
-
-    # ── 核心結果（放在最上方：成功率 / 終值 / 歸零臨界提領率）────────────
+    # ── 核心結果（最重要：成功率 / 終值 / 歸零臨界提領率）────────────
     n_years = max(1, age_end - age_start)
     _strat_label = str(st.session_state.get("strategy_choice", "GK 護欄"))
     _strat_map_ui = {"固定提領": "fixed", "消費微笑曲線": "smile", "GK 護欄": "gk"}
@@ -1344,14 +1329,31 @@ if page_id == "retire":
     )
     _iwr_zero = (max(0.0, _w0_zero - float(_passive_at_start)) / float(A0_eff) * 100) if A0_eff > 0 else 0.0
 
-    k1, k2, k3 = st.columns(3)
-    with k1:
-        st.metric("退休成功率（標準蒙地卡羅）", f"{_mc_sr:.1f}%", "10,000 次模擬 · σ=15% · 常態")
-    with k2:
-        st.metric(f"{age_end} 歲剩餘資產（基準）", _fmt_asset(_final_base), f"策略：{_strat_label}")
-    with k3:
-        st.metric("固定提領：剛好歸零的臨界 IWR", f"{_iwr_zero:.2f}%", f"等效 W₀≈{_fmt_wan(_w0_zero)}/年")
-    st.caption("提示：『臨界 IWR』是確定性上限（固定提領、固定報酬假設）；實務仍應看蒙地卡羅成功率與壓力測試。")
+    with st.container(border=True):
+        st.subheader("核心結果（最重要）")
+        k1, k2, k3 = st.columns(3)
+        with k1:
+            st.metric("退休成功率（標準蒙地卡羅）", f"{_mc_sr:.1f}%", "10,000 次模擬 · σ=15% · 常態")
+        with k2:
+            st.metric(f"{age_end} 歲剩餘資產（基準）", _fmt_asset(_final_base), f"策略：{_strat_label}")
+        with k3:
+            st.metric("固定提領：剛好歸零的臨界 IWR", f"{_iwr_zero:.2f}%", f"等效 W₀≈{_fmt_wan(_w0_zero)}/年")
+        st.caption("提示：『臨界 IWR』是確定性上限（固定提領、固定報酬假設）；實務仍應看蒙地卡羅成功率與壓力測試。")
+
+    c1, c2, c3, c4 = st.columns(4)
+    with c1:
+        st.metric("初始提領率 IWR", f"{IWR:.2f}%", "安全邊界 4%" if IWR < 4 else "高於 4%")
+    with c2:
+        st.metric("繁榮護欄 (加薪觸發)", f"{gk_lower:.2f}%", "資產漲多時加薪 10%")
+    with c3:
+        st.metric("保全護欄 (減薪觸發)", f"{gk_upper:.2f}%", "資產跌多時減薪 10%")
+    with c4:
+        st.metric(
+            "實質報酬 r（淨）",
+            f"{r_pct:.2f}%",
+            f"毛 {r_pct_gross:.2f}% − 拖累 {r_drag_pct:.2f}% · 通膨 {inflation_pct}% · 醫療+{medical_premium}%"
+            + (" · 推論" if use_inferred_r == "依資產結構推論" else " · 手動"),
+        )
 
     # ── 下一步建議（把指標轉成可行動的調整）────────────────────────────
     _next_steps: list[str] = []
