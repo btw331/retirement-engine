@@ -1335,12 +1335,12 @@ if page_id == "retire":
         with k1:
             st.metric("退休成功率（標準蒙地卡羅）", f"{_mc_sr:.1f}%", "用 1 萬次市場情境估算（標準假設）")
         with k2:
-            _yrs_of_w0 = (_final_base / W0) if W0 > 0 else 0.0
             _pwr_annual = _final_base * 0.04
+            _pwr_monthly_wan = (_pwr_annual / 12.0) / 10_000
             st.metric(
                 f"{age_end} 歲剩餘資產（基準）",
                 _fmt_asset(_final_base),
-                f"大約還夠你花 {_yrs_of_w0:.1f} 年（以目前年支出計）｜等於每年約能花 {_fmt_wan(_pwr_annual)}",
+                f"折算成 2026 年購買力：每年約可支配 {_fmt_wan(_pwr_annual)}（約 {_pwr_monthly_wan:.1f} 萬/月）",
             )
         with k3:
             st.metric("固定提領：剛好歸零的臨界 IWR", f"{_iwr_zero:.2f}%", f"換成生活費：約每年 {_fmt_wan(_w0_zero)}")
