@@ -549,7 +549,21 @@ def _render_wizard() -> None:
 
                 st.markdown("**租金/以房養老（可選）**")
                 st.session_state["rental_monthly_wan"] = st.number_input(
-                    "月租金淨收入 (萬/月)", 0.0, 100.0, float(st.session_state.get("rental_monthly_wan", 0.0)), 0.5, key="wiz_rent_m"
+                    "月租金淨收入 (萬/月)",
+                    0.0,
+                    100.0,
+                    float(st.session_state.get("rental_monthly_wan", 0.0)),
+                    0.5,
+                    key="wiz_rent_m",
+                    help=(
+                        "請填「實際可拿來補生活費的到手金額」（淨現金流），而不是合約租金。"
+                        "建議先用教育庫的『出租房產淨收益／租金折現』試算；若不確定，可先用『毛租金×0.75』作保守淨值。"
+                    ),
+                )
+                st.caption(
+                    "保守速算：淨租金（月）≈ 房產市值 × 年淨殖利率(1%～2.5%) ÷ 12。"
+                    f"　→ 去做租金折現試算：[教育庫｜不動產收益護欄（Income Floor）]"
+                    f"({_qs(nav='edu', edu_category='房產／資產負債表／心理帳戶', edu_topic='16｜不動產收益護欄：Income Floor 與折現風險調整')})"
                 )
                 st.session_state["rental_start_age_input"] = st.number_input(
                     "租金開始年齡 (歲)", 40, 85, int(st.session_state.get("rental_start_age_input", 65)), 1, key="wiz_rent_age"
@@ -880,9 +894,12 @@ if not wizard_mode:
 
 if (not wizard_mode) and use_re_inputs:
     with st.sidebar.expander("🏠 不動產（選填）", expanded=True):
-        st.caption("填寫後可將房產折後淨值計入初始資產，並以租金收入減少每年從有價證券的提領。")
+        st.caption(
+            "定位：房產淨值屬於**非流動性安全墊**，不會用投資報酬率 r 納入複利；"
+            "只有『租金／以房養老』會在各自啟動年齡起，降低每年需要從有價證券提領的金額。"
+        )
         include_re = st.toggle("將不動產納入計算", value=False,
-                               help="開啟後，房產折後淨值加入 A₀；租金收入自動抵銷部分年度提領")
+                               help="開啟後：顯示房產折後淨值作為備援安全墊（不加入 A₀ 複利）；租金/以房養老會自動抵銷部分年度提領。")
         re_home_wan    = st.number_input(
             "自用住宅市值 (萬)",
             min_value=0, max_value=20_000, value=0, step=100,
@@ -905,7 +922,7 @@ if (not wizard_mode) and use_re_inputs:
             "流動性折扣 (%)",
             min_value=0, max_value=50, value=20, step=1,
             help=(
-                "房產變現時的總摩擦成本估算，含：仲介費 2–6%、代書費、"
+                "這不是『房價看跌』，而是房產變現時的總摩擦成本估算，含：仲介費 2–6%、代書費、"
                 "房地合一稅 15–45%（依持有年數）、搬遷費等。"
                 "持有 10 年以上稅率 15%，建議最低折扣 18–20%；"
                 "持有 2–5 年稅率 35%，建議折扣 40–45%。"
@@ -924,7 +941,18 @@ if (not wizard_mode) and use_re_inputs:
         rental_monthly_wan = st.number_input(
             "月租金淨收入 (萬/月)",
             min_value=0.0, max_value=100.0, value=0.0, step=0.5,
-            help="已扣除房屋稅、管理費、維修費、空置率後的實際到手月租金（台灣各區淨報酬率約 1.5–3.5%）",
+            help=(
+                "請填「實際到手、可用來補生活費的淨現金流」：已扣除空置、維修、管理費、房屋稅/地價稅等成本後。"
+                "若你手上只有合約租金（毛），建議先用教育庫的『出租房產淨收益計算機』或『租金可靠性折現（75% Income Floor）』估算後再填。"
+                "不確定時可先用『毛租金×0.75』作保守淨值。"
+            ),
+        )
+        st.caption(
+            "保守速算：淨租金（月）≈ 房產市值 × 年淨殖利率(1%～2.5%) ÷ 12。"
+            f"　→ 試算工具：[教育庫｜出租房產淨收益計算機]"
+            f"({_qs(nav='edu', edu_category='房產／資產負債表／心理帳戶', edu_topic='14｜不動產收益：租金、殖利率與 REITs')})"
+            f"｜[教育庫｜租金折現（Income Floor）]"
+            f"({_qs(nav='edu', edu_category='房產／資產負債表／心理帳戶', edu_topic='16｜不動產收益護欄：Income Floor 與折現風險調整')})"
         )
         rental_start_age_input = st.number_input(
             "租金開始年齡 (歲)",
@@ -936,7 +964,7 @@ if (not wizard_mode) and use_re_inputs:
         use_reverse_mortgage = st.toggle(
             "啟用以房養老",
             value=False,
-            help="達到啟動年齡時將房屋抵押給銀行，換取每月固定收入直至身故（台灣各行 2025 年利率約 2.16–4%）",
+            help="建議視為 80+ 或長照期的『末端流動性保險』：達到啟動年齡時將房屋抵押給銀行，換取每月固定收入直至身故（台灣各行 2025 年利率約 2.16–4%）",
         )
         if use_reverse_mortgage:
             rm_start_age   = st.number_input("以房養老啟動年齡 (歲)", min_value=60, max_value=90, value=80, step=1)
