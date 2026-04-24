@@ -1335,7 +1335,13 @@ if page_id == "retire":
         with k1:
             st.metric("退休成功率（標準蒙地卡羅）", f"{_mc_sr:.1f}%", "10,000 次模擬 · σ=15% · 常態")
         with k2:
-            st.metric(f"{age_end} 歲剩餘資產（基準）", _fmt_asset(_final_base), f"策略：{_strat_label}")
+            _yrs_of_w0 = (_final_base / W0) if W0 > 0 else 0.0
+            _pwr_annual = _final_base * 0.04
+            st.metric(
+                f"{age_end} 歲剩餘資產（基準）",
+                _fmt_asset(_final_base),
+                f"≈ {_yrs_of_w0:.1f} 年生活費（以 W₀）／≈ {_fmt_wan(_pwr_annual)}/年（×4%）",
+            )
         with k3:
             st.metric("固定提領：剛好歸零的臨界 IWR", f"{_iwr_zero:.2f}%", f"等效 W₀≈{_fmt_wan(_w0_zero)}/年")
         st.caption("提示：『臨界 IWR』是確定性上限（固定提領、固定報酬假設）；實務仍應看蒙地卡羅成功率與壓力測試。")
