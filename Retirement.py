@@ -1438,99 +1438,99 @@ if page_id == "retire":
     # 封閉公式驗算
     if _show_detail:
         with st.expander("🔬 驗證 1：封閉公式對照（引擎精度檢查）", expanded=False):
-        st.markdown("""
+            st.markdown("""
 **固定提領（strategy=fixed）** 具備精確解析解，可驗算動態引擎的浮點誤差：
 
 ```
 A_n = (A₀ − W) × (1+r)ⁿ − W × [(1+r)ⁿ − (1+r)] / r   （期初提領，r ≠ 0）
 A_n = A₀ − W × n                                         （r = 0 時）
 ```
-        """)
-        # 驗算使用純有價證券 A0（不含房產），與封閉公式對象一致
-        _sim_val = run_dynamic_projection(A0, W0, r_pct, n_years, age_start,
-                                          strategy="fixed",
-                                          med_premium_pct=0.0,
-                                          pension_annual=0, claim_age=int(claim_age),
-                                          rental_annual=0, rental_start_age=999)
-        _ana_val = _analytical_fixed(A0, W0, r_pct / 100, n_years)
-        _err_abs = abs(_sim_val - _ana_val)
-        _err_pct = (_err_abs / _ana_val * 100) if _ana_val > 0 else 0.0
+            """)
+            # 驗算使用純有價證券 A0（不含房產），與封閉公式對象一致
+            _sim_val = run_dynamic_projection(A0, W0, r_pct, n_years, age_start,
+                                              strategy="fixed",
+                                              med_premium_pct=0.0,
+                                              pension_annual=0, claim_age=int(claim_age),
+                                              rental_annual=0, rental_start_age=999)
+            _ana_val = _analytical_fixed(A0, W0, r_pct / 100, n_years)
+            _err_abs = abs(_sim_val - _ana_val)
+            _err_pct = (_err_abs / _ana_val * 100) if _ana_val > 0 else 0.0
 
-        vc1, vc2, vc3 = st.columns(3)
-        with vc1:
-            st.metric("動態引擎輸出", _fmt_asset(_sim_val))
-        with vc2:
-            st.metric("封閉公式解", _fmt_asset(_ana_val))
-        with vc3:
-            st.metric("計算誤差", f"{_err_pct:.8f}%")
+            vc1, vc2, vc3 = st.columns(3)
+            with vc1:
+                st.metric("動態引擎輸出", _fmt_asset(_sim_val))
+            with vc2:
+                st.metric("封閉公式解", _fmt_asset(_ana_val))
+            with vc3:
+                st.metric("計算誤差", f"{_err_pct:.8f}%")
 
-        if _err_pct < 0.001:
-            st.success(f"✅ 驗算通過：誤差 {_err_pct:.2e}%，引擎計算邏輯正確。")
-        else:
-            st.error(f"⚠️ 誤差 {_err_pct:.4f}%，超過容許值，請檢查引擎邏輯。")
-        st.caption(
-            f"驗算對象：有價證券 A₀ = {_fmt_asset(A0)}（不含房產，確保與封閉公式一致）。"
-            "不含勞保/勞退補貼（pension_annual=0）、不含醫療溢價（med=0）。"
-            "消費微笑曲線與 GK 護欄為非線性動態模型，無封閉解，請用下方蒙地卡羅驗證。"
-        )
+            if _err_pct < 0.001:
+                st.success(f"✅ 驗算通過：誤差 {_err_pct:.2e}%，引擎計算邏輯正確。")
+            else:
+                st.error(f"⚠️ 誤差 {_err_pct:.4f}%，超過容許值，請檢查引擎邏輯。")
+            st.caption(
+                f"驗算對象：有價證券 A₀ = {_fmt_asset(A0)}（不含房產，確保與封閉公式一致）。"
+                "不含勞保/勞退補貼（pension_annual=0）、不含醫療溢價（med=0）。"
+                "消費微笑曲線與 GK 護欄為非線性動態模型，無封閉解，請用下方蒙地卡羅驗證。"
+            )
 
     # 蒙地卡羅模擬
     if _show_risk or _show_detail:
         with st.expander("🎲 驗證 2：蒙地卡羅模擬（成功機率 & SORR 量化）", expanded=_show_risk):
-        st.markdown("""
+            st.markdown("""
 **蒙地卡羅法**：將固定 r 改為「隨機報酬率」，模擬 **10,000 條**不同市場路徑，
 統計「目標年齡時資產 > 0」的比例，並輸出 P10 / P50 / P90 三段分位數。
 
 此法補充確定性模型無法量化的 **SORR（序列報酬風險）**，是業界最標準的退休規劃驗證方法。
-        """)
+            """)
 
-        mc_mode = st.radio(
-            "模擬模式",
-            ["標準（建議）", "壓力測試（保守）", "進階（自行調參）"],
-            index=0,
-            horizontal=True,
-            help="標準：少量參數即可得到成功率。壓力測試：自動採用肥尾/負偏態等保守設定。進階：展開全部參數。",
-        )
-        mc_row1_c1, mc_row1_c2, mc_row1_c3 = st.columns([2, 1, 1])
-        with mc_row1_c1:
-            if mc_mode == "進階（自行調參）":
-                mc_std = st.slider(
-                    "年報酬率標準差 σ (%)",
-                    min_value=5.0, max_value=30.0, value=15.0, step=1.0,
-                    help="股票型組合歷史波動率約 15–20%；保守組合可設 10–12%；0050/S&P500 約 18–20%",
-                )
-            elif mc_mode == "壓力測試（保守）":
-                mc_std = 18.0
-                st.caption("年波動率 σ：壓力測試固定為 **18%**（偏保守）。")
-            else:
-                mc_std = 15.0
-                st.caption("年波動率 σ：標準模式固定為 **15%**。")
-        with mc_row1_c2:
-            if mc_mode == "進階（自行調參）":
-                mc_dist = st.radio(
-                    "報酬率分布",
-                    ["常態分布", "t 分布（肥尾）", "歷史 Bootstrap"],
-                    horizontal=True,
-                    help=(
-                        "常態分布：標準假設，計算快速\n"
-                        "t 分布：模擬金融市場肥尾（極端漲跌比常態更頻繁），尾部風險通常較常態更高\n"
-                        "歷史 Bootstrap：直接從台灣/美股 50 年歷史實質報酬重抽樣，"
-                        "保留真實偏態與肥尾，σ 由歷史資料決定（忽略上方 σ 設定）"
-                    ),
-                )
-            elif mc_mode == "壓力測試（保守）":
-                mc_dist = "t 分布（肥尾）"
-                st.caption("分布：壓力測試固定為 **t 分布（肥尾 + 負偏態）**。")
-            else:
-                mc_dist = "常態分布"
-                st.caption("分布：標準模式固定為 **常態分布**。")
-        with mc_row1_c3:
-            mc_strategy = st.radio(
-                "模擬策略",
-                ["固定提領", "消費微笑曲線", "GK 護欄"],
+            mc_mode = st.radio(
+                "模擬模式",
+                ["標準（建議）", "壓力測試（保守）", "進階（自行調參）"],
+                index=0,
                 horizontal=True,
-                help="與主引擎相同的三種策略，均包含醫療溢價及勞保補貼邏輯",
+                help="標準：少量參數即可得到成功率。壓力測試：自動採用肥尾/負偏態等保守設定。進階：展開全部參數。",
             )
+            mc_row1_c1, mc_row1_c2, mc_row1_c3 = st.columns([2, 1, 1])
+            with mc_row1_c1:
+                if mc_mode == "進階（自行調參）":
+                    mc_std = st.slider(
+                        "年報酬率標準差 σ (%)",
+                        min_value=5.0, max_value=30.0, value=15.0, step=1.0,
+                        help="股票型組合歷史波動率約 15–20%；保守組合可設 10–12%；0050/S&P500 約 18–20%",
+                    )
+                elif mc_mode == "壓力測試（保守）":
+                    mc_std = 18.0
+                    st.caption("年波動率 σ：壓力測試固定為 **18%**（偏保守）。")
+                else:
+                    mc_std = 15.0
+                    st.caption("年波動率 σ：標準模式固定為 **15%**。")
+            with mc_row1_c2:
+                if mc_mode == "進階（自行調參）":
+                    mc_dist = st.radio(
+                        "報酬率分布",
+                        ["常態分布", "t 分布（肥尾）", "歷史 Bootstrap"],
+                        horizontal=True,
+                        help=(
+                            "常態分布：標準假設，計算快速\n"
+                            "t 分布：模擬金融市場肥尾（極端漲跌比常態更頻繁），尾部風險通常較常態更高\n"
+                            "歷史 Bootstrap：直接從台灣/美股 50 年歷史實質報酬重抽樣，"
+                            "保留真實偏態與肥尾，σ 由歷史資料決定（忽略上方 σ 設定）"
+                        ),
+                    )
+                elif mc_mode == "壓力測試（保守）":
+                    mc_dist = "t 分布（肥尾）"
+                    st.caption("分布：壓力測試固定為 **t 分布（肥尾 + 負偏態）**。")
+                else:
+                    mc_dist = "常態分布"
+                    st.caption("分布：標準模式固定為 **常態分布**。")
+            with mc_row1_c3:
+                mc_strategy = st.radio(
+                    "模擬策略",
+                    ["固定提領", "消費微笑曲線", "GK 護欄"],
+                    horizontal=True,
+                    help="與主引擎相同的三種策略，均包含醫療溢價及勞保補貼邏輯",
+                )
 
         mc_use_t         = mc_dist == "t 分布（肥尾）"
         mc_use_bootstrap = mc_dist == "歷史 Bootstrap"
