@@ -151,9 +151,11 @@ def _run_monte_carlo(A0, W0, r_mean_pct, r_std_pct,
     dist_mode="normal"    → 常態分布 N(r̄, σ²)
     dist_mode="t"         → Student-t(df)，縮放後保留相同 r̄ 與 σ，但有肥尾
                             t_skew ∈ [-1,0]：負值以兩段縮放引入左偏態（負報酬更極端）
-    dist_mode="bootstrap" → 歷史年報酬直接重抽樣（視為名目報酬）
-    inflation_randomize   → True 時每年從 N(CPI, σ_CPI²) 抽取通膨，
-                            實質報酬 = 名目報酬 − 當年通膨（忽略輸入的 r_mean，改用名目報酬均值）
+    dist_mode="bootstrap" → 歷史「實質」年報酬直接重抽樣（保留偏態/肥尾；σ 由歷史資料決定）
+    inflation_randomize   → True 時每年從 N(CPI均值, σ_CPI²) 抽取通膨，
+                            並以「實質報酬 = 名目報酬 − 當年隨機通膨」把通膨不確定性納入路徑。
+                            注意：啟用此模式時，呼叫端需把 r_mean_pct 以「名目均值」傳入（約 = 實質均值 + 通膨均值），
+                            引擎才會在扣除 CPI 後回到一致的「實質」口徑。
     rental_annual / rental_start_age：一般租金收入及其啟動年齡。
     rm_annual / rm_start_age：以房養老年收入及其啟動年齡（兩者獨立判斷，不合併）。
     固定隨機種子（seed=42）確保相同參數可重現。
@@ -188,13 +190,15 @@ def _run_monte_carlo(A0, W0, r_mean_pct, r_std_pct,
         returns = rng.normal(r_mean, r_std, (n_sim, n_years))
 
     # ── 通膨隨機化：名目報酬 − 隨機 CPI → 實質報酬 ─────────────────────
-    # 若啟用，則 r_mean_pct 視為名目報酬均值，每年 CPI 從 N(μ_cpi, σ_cpi²) 抽取。
-    # 此模式下 bootstrap 的歷史資料被視為名目報酬，通膨不確定性疊加其上。
+    # 方法論口徑：引擎以「實質購買力」計算為主。
+    # 因此當 inflation_randomize=True 時，呼叫端會把 r_mean_pct 當成「名目均值」（約 = 實質 + 通膨均值），
+    # 這裡每年扣掉隨機 CPI，讓最終 returns 回到一致的「實質報酬」口徑。
+    # Bootstrap 來源本來就是「歷史實質報酬」，再扣 CPI 會混淆口徑，因此排除。
     if inflation_randomize and dist_mode != "bootstrap":
         infl_mean = inflation_mean_pct / 100.0
         infl_std  = inflation_std_pct  / 100.0
         cpi_draws = rng.normal(infl_mean, infl_std, (n_sim, n_years))
-        # returns 目前為名目報酬，減去隨機 CPI 得實質報酬
+        # returns 目前為名目報酬；扣除隨機 CPI 得實質報酬
         returns = returns - cpi_draws
 
     A         = np.full(n_sim, float(A0))       # 每條路徑的資產餘額
@@ -1408,6 +1412,13 @@ st.session_state["page_id"] = page_id
 if page_id == "retire":
     st.title("退休規劃大師")
     st.caption(f"50 年長週期退休財務工程與資產動態管理 (2026–2076) · 金額以 2026 實質購買力計價，預設通膨 {inflation_pct}%")
+    st.info(
+        "**口徑統一（全站一致）**\n\n"
+        "- **實質（Real）**：以 **2026 年購買力**計價（本工具所有核心計算/引擎與大多數指標的口徑）。\n"
+        "- **名目（Nominal）**：未折算的未來金額；本工具僅在顯示時，用你設定的 **CPI 複利**把實質換算成名目作為直覺參考。\n"
+        "- **報酬率 r**：除非特別標註，皆指 **實質報酬率**；若在蒙地卡羅啟用「通膨隨機化」，呼叫端會以**名目均值**傳入，並在引擎內每年扣除隨機 CPI 回到實質路徑。\n"
+        "- **成功率（蒙地卡羅）**：定義為 P(A_end > 0)（在目標年齡時資產仍大於 0 的比例）。"
+    )
 
     # ── 核心結果（最重要：成功率 / 終值 / 歸零臨界提領率）────────────
     n_years = max(1, age_end - age_start)
@@ -1588,7 +1599,8 @@ if page_id == "retire":
         )
         st.caption(
             "歷史參考：0050 名目年化約 11.6%（2003–2024）；VTI 名目年化約 9.5%（2005–2024，含2008危機）。"
-            "扣除通膨（2%）後實質約 7–10%，保守情境約為歷史值的一半，中性約 60–65%，積極約 80%。"
+            "（名目僅供直覺對照；本工具輸入/計算以**實質報酬**為主。）"
+            "扣除通膨（約 2%）後，長期實質常見落在約 7–10%；保守情境可取歷史的一半，中性取 60–65%，積極取 80%。"
             "注意：算術加權平均略高於幾何平均（方差拖累約 0.5–1.1%），長期規劃建議偏向保守情境。"
         )
     else:
@@ -4785,7 +4797,7 @@ Morningstar 2025 研究顯示：退休後不當停損所造成的損失，遠大
             ["40% 台股 + 30% 美股 + 30% 全球", "8.0–9.5%（加權估）", "~15–16%", "組合後降低", "中低"],
         ], columns=["組合", "估算名目年化", "年波動率 σ", "主要風險", "集中度"])
         st.dataframe(diversify_df, use_container_width=True, hide_index=True)
-        st.caption("以上為歷史估算，未來報酬不保證。名目報酬需扣通膨（約2%）得實質報酬。")
+        st.caption("以上為歷史估算，未來報酬不保證。本工具以「實質報酬／2026 購買力」為主要口徑；表中的名目年化僅供直覺對照。")
 
         st.markdown("### 全球 ETF 的實務選擇（台灣投資人）")
         etf_global_df = pd.DataFrame([
@@ -4860,7 +4872,7 @@ Morningstar 2025 研究顯示：退休後不當停損所造成的損失，遠大
              "季配息（3/6/9/12月）"],
         ], columns=["ETF", "追蹤指數", "涵蓋範圍", "計價幣別", "費用率", "估算名目年化報酬", "年波動率σ", "配息頻率"])
         st.dataframe(etf_comp, use_container_width=True, hide_index=True)
-        st.caption("報酬率為歷史估算，未來不保證。需扣除台灣通膨（約1.5–2%）換算實質報酬。")
+        st.caption("報酬率為歷史估算，未來不保證。本工具以「實質報酬／2026 購買力」為主要口徑；若引用名目年化，請先扣通膨換算成實質再帶入模型。")
 
         st.markdown("### 為什麼選擇這個組合？")
         col_a, col_b = st.columns(2)
