@@ -1194,20 +1194,6 @@ st.session_state["page_id"] = page_id
 if page_id == "retire":
     st.title("退休規劃大師")
     st.caption(f"50 年長週期退休財務工程與資產動態管理 (2026–2076) · 金額以 2026 實質購買力計價，預設通膨 {inflation_pct}%")
-    n_years = max(1, age_end - age_start)
-
-    # B 版：把同一頁分成「總覽/風險/細節」，功能不減少，只改資訊層級
-    _retire_view = st.radio(
-        "檢視",
-        ["總覽", "風險", "模型/細節"],
-        index=0,
-        horizontal=True,
-        key="b_retire_view",
-        label_visibility="collapsed",
-    )
-    _show_overview = _retire_view == "總覽"
-    _show_risk = _retire_view == "風險"
-    _show_detail = _retire_view == "模型/細節"
 
     c1, c2, c3, c4 = st.columns(4)
     with c1:
@@ -1225,18 +1211,17 @@ if page_id == "retire":
         )
 
     # ── 下一步建議（把指標轉成可行動的調整）────────────────────────────
-    if _show_overview:
-        _next_steps: list[str] = []
-        if IWR >= 4.0:
-            _next_steps.append("IWR 偏高：優先降低 **W₀**、延後目標年齡/退休時點，或提高可投資資產 **A₀**。")
-        else:
-            _next_steps.append("IWR 在可控區：建議以 **GK 護欄**作為預設策略，讓市場好壞自動調節支出。")
-        if not has_pension and not (include_re and (rental_annual > 0 or rm_annual > 0)):
-            _next_steps.append("底層現金流（Income Floor）偏弱：可評估勞保/勞退、租金（保守折現後）或其他穩定收入，以降低有效提領率。")
-        if include_re and rental_monthly_wan > 0:
-            _next_steps.append("已填租金：請確認你填的是『淨租金』而非毛租金；不確定時先用『毛×0.75』保守化，或到教育庫做折現試算。")
-        if _next_steps:
-            st.info("**下一步建議（最少動作）**\n\n" + "\n".join([f"- {s}" for s in _next_steps[:3]]))
+    _next_steps: list[str] = []
+    if IWR >= 4.0:
+        _next_steps.append("IWR 偏高：優先降低 **W₀**、延後目標年齡/退休時點，或提高可投資資產 **A₀**。")
+    else:
+        _next_steps.append("IWR 在可控區：建議以 **GK 護欄**作為預設策略，讓市場好壞自動調節支出。")
+    if not has_pension and not (include_re and (rental_annual > 0 or rm_annual > 0)):
+        _next_steps.append("底層現金流（Income Floor）偏弱：可評估勞保/勞退、租金（保守折現後）或其他穩定收入，以降低有效提領率。")
+    if include_re and rental_monthly_wan > 0:
+        _next_steps.append("已填租金：請確認你填的是『淨租金』而非毛租金；不確定時先用『毛×0.75』保守化，或到教育庫做折現試算。")
+    if _next_steps:
+        st.info("**下一步建議（最少動作）**\n\n" + "\n".join([f"- {s}" for s in _next_steps[:3]]))
 
     cond_rows = [
         ("A₀ 初始資產", f"NTD {_fmt_currency(A0)}（{_fmt_wan(A0)}）"),
@@ -1253,42 +1238,37 @@ if page_id == "retire":
         ("起始/目標年齡", f"{age_start} → {age_end} 歲"),
     ]
     cond_df = pd.DataFrame(cond_rows, columns=["參數", "數值"])
-    if _show_overview:
-        with st.expander("假設摘要（可收合）", expanded=False):
-            st.dataframe(cond_df, use_container_width=True, hide_index=True)
-        st.divider()
+    st.dataframe(cond_df, use_container_width=True, hide_index=True)
+    st.divider()
 
     # ── 執行摘要 ──
-    if _show_overview:
-        with st.expander("執行摘要（可收合）", expanded=False):
-            st.subheader("執行摘要")
-            if IWR < 2.0:
-                safety_label = "遠低於"
-                safety_note  = "系統具備**財務熱力學溢位**：核心威脅已由「生存風險」轉向「資本效率低下（無效資產堆積）」，規劃重心應移往消費優化。"
-            elif IWR < 4.0:
-                safety_label = "低於"
-                safety_note  = "系統處於**安全區**：具備一定緩衝空間，建議以 GK 護欄動態管理提領，避免過度保守導致晚年資源閒置。"
-            else:
-                safety_label = "接近或超過"
-                safety_note  = "系統處於**臨界區或危險區**：IWR 達到或超過 4% 安全閾值，退休初期若遇市場低迷（SORR），路徑崩潰風險顯著上升，強烈建議提高準備金或降低提領。"
-            A_star = (W0 * (1 + r_pct / 100) / (r_pct / 100)) if r_pct > 0 else float("inf")
-            survivability = "✅ 在目前報酬率下資產均衡點 **{:.0f} 萬** 高於初始資產，系統能長期維持（確定性路徑）。".format(A_star / 1e4) \
-                            if A_star > A0 else \
-                            "⚠️ 資產均衡點 **{:.0f} 萬** 低於初始資產，固定提領在目前報酬率下資產將逐漸耗盡；建議採用 GK 護欄或提高報酬率假設。".format(A_star / 1e4)
-            st.markdown(f"""
+    st.subheader("執行摘要")
+    if IWR < 2.0:
+        safety_label = "遠低於"
+        safety_note  = "系統具備**財務熱力學溢位**：核心威脅已由「生存風險」轉向「資本效率低下（無效資產堆積）」，規劃重心應移往消費優化。"
+    elif IWR < 4.0:
+        safety_label = "低於"
+        safety_note  = "系統處於**安全區**：具備一定緩衝空間，建議以 GK 護欄動態管理提領，避免過度保守導致晚年資源閒置。"
+    else:
+        safety_label = "接近或超過"
+        safety_note  = "系統處於**臨界區或危險區**：IWR 達到或超過 4% 安全閾值，退休初期若遇市場低迷（SORR），路徑崩潰風險顯著上升，強烈建議提高準備金或降低提領。"
+    A_star = (W0 * (1 + r_pct / 100) / (r_pct / 100)) if r_pct > 0 else float("inf")
+    survivability = "✅ 在目前報酬率下資產均衡點 **{:.0f} 萬** 高於初始資產，系統能長期維持（確定性路徑）。".format(A_star / 1e4) \
+                    if A_star > A0 else \
+                    "⚠️ 資產均衡點 **{:.0f} 萬** 低於初始資產，固定提領在目前報酬率下資產將逐漸耗盡；建議採用 GK 護欄或提高報酬率假設。".format(A_star / 1e4)
+    st.markdown(f"""
 - **系統屬性**：初始提領率 **{IWR:.2f}%**，{safety_label}學界公認的 4% 安全閾值。{safety_note}
 - **核心建議**：採用 **蓋頓–克林格 (GK) 護欄策略**，以負回饋調節在資產增值時觸發繁榮法則、強制加薪，將複利轉化為高品質生命體驗與生物資本投資。
 - **數學驗算**：{survivability}
 - **風險**：建議未來每月儲蓄可全數配置全球分散型 ETF（如 VWRA），以「地理熵減」應對地緣風險。
     """.strip())
-            st.info("**台灣情境提醒**：退休年齡越早、規劃年數越長，4% 法則風險越高。50 歲前退休建議提高準備金或降低提領率，並以蒙地卡羅評估「成功機率」。")
-        st.divider()
+    st.info("**台灣情境提醒**：退休年齡越早、規劃年數越長，4% 法則風險越高。50 歲前退休建議提高準備金或降低提領率，並以蒙地卡羅評估「成功機率」。")
+    st.divider()
 
     # ── 資產結構 ──
     # Wizard 模式下，資產結構的細節僅在 Step 2 顯示（避免 Step 1/3 因未渲染配置區而 NameError）
-    if _show_overview and ((not wizard_mode) or (int(st.session_state.get("wiz_step", 1)) == 2)):
-        with st.expander("資產結構現況（可收合）", expanded=False):
-            st.subheader("資產結構現況")
+    if (not wizard_mode) or (int(st.session_state.get("wiz_step", 1)) == 2):
+        st.subheader("資產結構現況")
         if asset_input_mode == "填寫實際金額 (萬)":
             _amts = [amt_us_stock, amt_us_etf, amt_tw_stock, amt_tw_etf]
             _amt_col = [f"{v:,} 萬" for v in _amts]
@@ -1315,37 +1295,35 @@ if page_id == "retire":
             "扣除通膨（2%）後實質約 7–10%，保守情境約為歷史值的一半，中性約 60–65%，積極約 80%。"
             "注意：算術加權平均略高於幾何平均（方差拖累約 0.5–1.1%），長期規劃建議偏向保守情境。"
         )
-    elif _show_overview:
+    else:
         st.subheader("資產結構現況")
         st.info("在 Wizard 模式下，資產結構細節會在 **Step 2** 顯示。")
 
     # 不動產貢獻摘要（若已啟用）
-    if _show_overview:
-        _re_total_income = rental_annual + rm_annual
-        if include_re and (re_net_wan > 0 or _re_total_income > 0):
-            with st.expander("不動產摘要（可收合）", expanded=False):
-                re_cols = st.columns(3)
-                with re_cols[0]:
-                    st.metric("不動產安全墊（折後）", f"{re_net_wan_eff:,} 萬",
-                              f"備援流動性（不加入投資 A₀）")
-                with re_cols[1]:
-                    _income_desc = []
-                    if rental_annual > 0:
-                        _income_desc.append(f"租金 {_fmt_wan(rental_annual)}/年（{rental_start_age_input} 歲起）")
-                    if rm_annual > 0:
-                        _income_desc.append(f"以房養老 {_fmt_wan(rm_annual)}/年（{rm_start_age} 歲起）")
-                    st.metric("不動產年收入（合計）", _fmt_wan(_re_total_income) + "/年",
-                              "；".join(_income_desc) if _income_desc else "尚無收入")
-                with re_cols[2]:
-                    _cover_pct = _re_total_income / W0 * 100 if W0 > 0 else 0
-                    st.metric("生活費覆蓋率", f"{_cover_pct:.0f}%",
-                              "不動產收入 ÷ 年生活費目標")
-                st.caption("🏠 租金與以房養老各依獨立啟動年齡計入引擎，每年從有價證券的淨提領額將自動降低。")
-        st.divider()
+    _re_total_income = rental_annual + rm_annual
+    if include_re and (re_net_wan > 0 or _re_total_income > 0):
+        re_cols = st.columns(3)
+        with re_cols[0]:
+            st.metric("不動產安全墊（折後）", f"{re_net_wan_eff:,} 萬",
+                      f"備援流動性（不加入投資 A₀）")
+        with re_cols[1]:
+            _income_desc = []
+            if rental_annual > 0:
+                _income_desc.append(f"租金 {_fmt_wan(rental_annual)}/年（{rental_start_age_input} 歲起）")
+            if rm_annual > 0:
+                _income_desc.append(f"以房養老 {_fmt_wan(rm_annual)}/年（{rm_start_age} 歲起）")
+            st.metric("不動產年收入（合計）", _fmt_wan(_re_total_income) + "/年",
+                      "；".join(_income_desc) if _income_desc else "尚無收入")
+        with re_cols[2]:
+            _cover_pct = _re_total_income / W0 * 100 if W0 > 0 else 0
+            st.metric("生活費覆蓋率", f"{_cover_pct:.0f}%",
+                      "不動產收入 ÷ 年生活費目標")
+        st.caption("🏠 租金與以房養老各依獨立啟動年齡計入引擎，每年從有價證券的淨提領額將自動降低。")
+    st.divider()
 
     # ── 壓力測試 ──
-    if _show_risk:
-        st.subheader("壓力測試 (90 歲時剩餘資產)")
+    st.subheader("壓力測試 (90 歲時剩餘資產)")
+    n_years = max(1, age_end - age_start)
     pension_note  = f" · 勞保＋勞退 {_fmt_wan(pension_annual)}/年（{claim_age} 歲起）" if has_pension else ""
     rental_note   = f" · 租金 {_fmt_wan(rental_annual)}/年（{rental_start_age_input} 歲起）" if (include_re and rental_annual > 0) else ""
     rm_note       = f" · 以房養老 {_fmt_wan(rm_annual)}/年（{rm_start_age} 歲起）" if (include_re and rm_annual > 0) else ""
@@ -1398,8 +1376,7 @@ if page_id == "retire":
     })
     st.dataframe(matrix_a, use_container_width=True, hide_index=True)
 
-    if _show_risk:
-        st.subheader("多重風險疊加情境")
+    st.subheader("多重風險疊加情境")
     r_down = max(0, r_pct - 1)
     _kw_med = dict(strategy="gk", pension_annual=pension_annual, claim_age=int(claim_age),
                    rental_annual=rental_annual, rental_start_age=int(rental_start_age_input),
@@ -1432,105 +1409,102 @@ if page_id == "retire":
     st.divider()
 
     # ── 模型驗證 ──
-    if _show_detail:
-        st.subheader("模型驗證")
+    st.subheader("模型驗證")
 
     # 封閉公式驗算
-    if _show_detail:
-        with st.expander("🔬 驗證 1：封閉公式對照（引擎精度檢查）", expanded=False):
-            st.markdown("""
+    with st.expander("🔬 驗證 1：封閉公式對照（引擎精度檢查）", expanded=False):
+        st.markdown("""
 **固定提領（strategy=fixed）** 具備精確解析解，可驗算動態引擎的浮點誤差：
 
 ```
 A_n = (A₀ − W) × (1+r)ⁿ − W × [(1+r)ⁿ − (1+r)] / r   （期初提領，r ≠ 0）
 A_n = A₀ − W × n                                         （r = 0 時）
 ```
-            """)
-            # 驗算使用純有價證券 A0（不含房產），與封閉公式對象一致
-            _sim_val = run_dynamic_projection(A0, W0, r_pct, n_years, age_start,
-                                              strategy="fixed",
-                                              med_premium_pct=0.0,
-                                              pension_annual=0, claim_age=int(claim_age),
-                                              rental_annual=0, rental_start_age=999)
-            _ana_val = _analytical_fixed(A0, W0, r_pct / 100, n_years)
-            _err_abs = abs(_sim_val - _ana_val)
-            _err_pct = (_err_abs / _ana_val * 100) if _ana_val > 0 else 0.0
+        """)
+        # 驗算使用純有價證券 A0（不含房產），與封閉公式對象一致
+        _sim_val = run_dynamic_projection(A0, W0, r_pct, n_years, age_start,
+                                          strategy="fixed",
+                                          med_premium_pct=0.0,
+                                          pension_annual=0, claim_age=int(claim_age),
+                                          rental_annual=0, rental_start_age=999)
+        _ana_val = _analytical_fixed(A0, W0, r_pct / 100, n_years)
+        _err_abs = abs(_sim_val - _ana_val)
+        _err_pct = (_err_abs / _ana_val * 100) if _ana_val > 0 else 0.0
 
-            vc1, vc2, vc3 = st.columns(3)
-            with vc1:
-                st.metric("動態引擎輸出", _fmt_asset(_sim_val))
-            with vc2:
-                st.metric("封閉公式解", _fmt_asset(_ana_val))
-            with vc3:
-                st.metric("計算誤差", f"{_err_pct:.8f}%")
+        vc1, vc2, vc3 = st.columns(3)
+        with vc1:
+            st.metric("動態引擎輸出", _fmt_asset(_sim_val))
+        with vc2:
+            st.metric("封閉公式解", _fmt_asset(_ana_val))
+        with vc3:
+            st.metric("計算誤差", f"{_err_pct:.8f}%")
 
-            if _err_pct < 0.001:
-                st.success(f"✅ 驗算通過：誤差 {_err_pct:.2e}%，引擎計算邏輯正確。")
-            else:
-                st.error(f"⚠️ 誤差 {_err_pct:.4f}%，超過容許值，請檢查引擎邏輯。")
-            st.caption(
-                f"驗算對象：有價證券 A₀ = {_fmt_asset(A0)}（不含房產，確保與封閉公式一致）。"
-                "不含勞保/勞退補貼（pension_annual=0）、不含醫療溢價（med=0）。"
-                "消費微笑曲線與 GK 護欄為非線性動態模型，無封閉解，請用下方蒙地卡羅驗證。"
-            )
+        if _err_pct < 0.001:
+            st.success(f"✅ 驗算通過：誤差 {_err_pct:.2e}%，引擎計算邏輯正確。")
+        else:
+            st.error(f"⚠️ 誤差 {_err_pct:.4f}%，超過容許值，請檢查引擎邏輯。")
+        st.caption(
+            f"驗算對象：有價證券 A₀ = {_fmt_asset(A0)}（不含房產，確保與封閉公式一致）。"
+            "不含勞保/勞退補貼（pension_annual=0）、不含醫療溢價（med=0）。"
+            "消費微笑曲線與 GK 護欄為非線性動態模型，無封閉解，請用下方蒙地卡羅驗證。"
+        )
 
     # 蒙地卡羅模擬
-    if _show_risk or _show_detail:
-        with st.expander("🎲 驗證 2：蒙地卡羅模擬（成功機率 & SORR 量化）", expanded=_show_risk):
-            st.markdown("""
+    with st.expander("🎲 驗證 2：蒙地卡羅模擬（成功機率 & SORR 量化）", expanded=False):
+        st.markdown("""
 **蒙地卡羅法**：將固定 r 改為「隨機報酬率」，模擬 **10,000 條**不同市場路徑，
 統計「目標年齡時資產 > 0」的比例，並輸出 P10 / P50 / P90 三段分位數。
 
 此法補充確定性模型無法量化的 **SORR（序列報酬風險）**，是業界最標準的退休規劃驗證方法。
-            """)
+        """)
 
-            mc_mode = st.radio(
-                "模擬模式",
-                ["標準（建議）", "壓力測試（保守）", "進階（自行調參）"],
-                index=0,
-                horizontal=True,
-                help="標準：少量參數即可得到成功率。壓力測試：自動採用肥尾/負偏態等保守設定。進階：展開全部參數。",
-            )
-            mc_row1_c1, mc_row1_c2, mc_row1_c3 = st.columns([2, 1, 1])
-            with mc_row1_c1:
-                if mc_mode == "進階（自行調參）":
-                    mc_std = st.slider(
-                        "年報酬率標準差 σ (%)",
-                        min_value=5.0, max_value=30.0, value=15.0, step=1.0,
-                        help="股票型組合歷史波動率約 15–20%；保守組合可設 10–12%；0050/S&P500 約 18–20%",
-                    )
-                elif mc_mode == "壓力測試（保守）":
-                    mc_std = 18.0
-                    st.caption("年波動率 σ：壓力測試固定為 **18%**（偏保守）。")
-                else:
-                    mc_std = 15.0
-                    st.caption("年波動率 σ：標準模式固定為 **15%**。")
-            with mc_row1_c2:
-                if mc_mode == "進階（自行調參）":
-                    mc_dist = st.radio(
-                        "報酬率分布",
-                        ["常態分布", "t 分布（肥尾）", "歷史 Bootstrap"],
-                        horizontal=True,
-                        help=(
-                            "常態分布：標準假設，計算快速\n"
-                            "t 分布：模擬金融市場肥尾（極端漲跌比常態更頻繁），尾部風險通常較常態更高\n"
-                            "歷史 Bootstrap：直接從台灣/美股 50 年歷史實質報酬重抽樣，"
-                            "保留真實偏態與肥尾，σ 由歷史資料決定（忽略上方 σ 設定）"
-                        ),
-                    )
-                elif mc_mode == "壓力測試（保守）":
-                    mc_dist = "t 分布（肥尾）"
-                    st.caption("分布：壓力測試固定為 **t 分布（肥尾 + 負偏態）**。")
-                else:
-                    mc_dist = "常態分布"
-                    st.caption("分布：標準模式固定為 **常態分布**。")
-            with mc_row1_c3:
-                mc_strategy = st.radio(
-                    "模擬策略",
-                    ["固定提領", "消費微笑曲線", "GK 護欄"],
-                    horizontal=True,
-                    help="與主引擎相同的三種策略，均包含醫療溢價及勞保補貼邏輯",
+        mc_mode = st.radio(
+            "模擬模式",
+            ["標準（建議）", "壓力測試（保守）", "進階（自行調參）"],
+            index=0,
+            horizontal=True,
+            help="標準：少量參數即可得到成功率。壓力測試：自動採用肥尾/負偏態等保守設定。進階：展開全部參數。",
+        )
+        mc_row1_c1, mc_row1_c2, mc_row1_c3 = st.columns([2, 1, 1])
+        with mc_row1_c1:
+            if mc_mode == "進階（自行調參）":
+                mc_std = st.slider(
+                    "年報酬率標準差 σ (%)",
+                    min_value=5.0, max_value=30.0, value=15.0, step=1.0,
+                    help="股票型組合歷史波動率約 15–20%；保守組合可設 10–12%；0050/S&P500 約 18–20%",
                 )
+            elif mc_mode == "壓力測試（保守）":
+                mc_std = 18.0
+                st.caption("年波動率 σ：壓力測試固定為 **18%**（偏保守）。")
+            else:
+                mc_std = 15.0
+                st.caption("年波動率 σ：標準模式固定為 **15%**。")
+        with mc_row1_c2:
+            if mc_mode == "進階（自行調參）":
+                mc_dist = st.radio(
+                    "報酬率分布",
+                    ["常態分布", "t 分布（肥尾）", "歷史 Bootstrap"],
+                    horizontal=True,
+                    help=(
+                        "常態分布：標準假設，計算快速\n"
+                        "t 分布：模擬金融市場肥尾（極端漲跌比常態更頻繁），尾部風險通常較常態更高\n"
+                        "歷史 Bootstrap：直接從台灣/美股 50 年歷史實質報酬重抽樣，"
+                        "保留真實偏態與肥尾，σ 由歷史資料決定（忽略上方 σ 設定）"
+                    ),
+                )
+            elif mc_mode == "壓力測試（保守）":
+                mc_dist = "t 分布（肥尾）"
+                st.caption("分布：壓力測試固定為 **t 分布（肥尾 + 負偏態）**。")
+            else:
+                mc_dist = "常態分布"
+                st.caption("分布：標準模式固定為 **常態分布**。")
+        with mc_row1_c3:
+            mc_strategy = st.radio(
+                "模擬策略",
+                ["固定提領", "消費微笑曲線", "GK 護欄"],
+                horizontal=True,
+                help="與主引擎相同的三種策略，均包含醫療溢價及勞保補貼邏輯",
+            )
 
         mc_use_t         = mc_dist == "t 分布（肥尾）"
         mc_use_bootstrap = mc_dist == "歷史 Bootstrap"
