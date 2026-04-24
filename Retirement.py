@@ -1506,19 +1506,16 @@ if page_id == "retire":
         run_dynamic_projection(A0_eff, W0, r_high, n_years, age_start, strategy="smile", **_kw),
         run_dynamic_projection(A0_eff, W0, r_high, n_years, age_start, strategy="gk",    **_kw),
     ]
-    def _fmt_pwr(x):
-        """剩餘資產 × 4% → 年可提領額（2026 實質購買力）"""
-        if x is None or x <= 0:
-            return "歸零"
-        return f"{x * 0.04 / 1e4:,.0f} 萬/年"
+    _infl_factor_end = (1.0 + float(inflation_pct) / 100.0) ** float(n_years)
 
     def _fmt_cell(x):
-        """合併顯示：剩餘資產 + 約當年購買力"""
+        """合併顯示：90歲名目剩餘資產 + 折算回2026購買力"""
         if x is None or x <= 0:
             return "歸零"
-        return f"{_fmt_asset(x)}  (→ {_fmt_pwr(x)})"
+        x_nom = float(x) * float(_infl_factor_end)
+        return f"{_fmt_asset(x_nom)}（折算回2026：{_fmt_asset(x)}）"
 
-    st.caption("格式說明：各格顯示「**90歲剩餘資產**（→ 約當2026年可提領額/年）」，括號內 = 剩餘資產 × 4%，代表彼時每年可持續支出的生活費（2026實質購買力）。")
+    st.caption("格式說明：各格顯示「**90歲名目剩餘資產**（折算回2026：實質購買力）」；折算以你設定的 CPI 複利估算。")
     matrix_a = pd.DataFrame({
         "策略": ["固定提領 (實質購買力/年)", "消費微笑曲線", "GK 護欄"],
         f"悲觀｜實質 {r_low}%": [_fmt_cell(x) for x in col_low],
@@ -1554,9 +1551,9 @@ if page_id == "retire":
          "最壞情境，GK 護欄極限抗壓能力測試",
          _fmt_cell(res_multi)),
     ]
-    df_risk = pd.DataFrame(scenarios, columns=["情境", "假設", "預估影響", "90歲剩餘資產（括號=約當2026年可提領/年）"])
+    df_risk = pd.DataFrame(scenarios, columns=["情境", "假設", "預估影響", "90歲剩餘資產（名目；括號=折算回2026）"])
     st.dataframe(df_risk, use_container_width=True, hide_index=True)
-    st.caption("格式：剩餘資產 (→ 約當2026年可提領額)。GK 護欄 + 指數複利醫療溢價；建議搭配流動性緩衝因應最壞情境。")
+    st.caption("格式：90歲名目剩餘資產（折算回2026：實質購買力）。GK 護欄 + 指數複利醫療溢價；建議搭配流動性緩衝因應最壞情境。")
     st.divider()
 
     # ── 模型驗證 ──
