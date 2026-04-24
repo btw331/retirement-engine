@@ -351,6 +351,23 @@ def _clamp_float(x: float, lo: float, hi: float) -> float:
     return float(min(hi, max(lo, float(x))))
 
 
+def _estimate_cost_drag_pct(
+    *,
+    product_mode: str,
+    expense_ratio_pct: float,
+    friction_drag_pct: float,
+    dividend_yield_pct: float,
+    dividend_tax_pct: float,
+) -> float:
+    """與引擎相同的「年拖累%」合計（費用+摩擦+配息稅，簡化估算）。"""
+    div_tax = (
+        float(dividend_yield_pct) * (float(dividend_tax_pct) / 100.0)
+        if str(product_mode).startswith("配息型")
+        else 0.0
+    )
+    return float(expense_ratio_pct) + float(friction_drag_pct) + div_tax
+
+
 # ── Wizard：一次只顯示一段（方向 3）────────────────────────────────────
 wizard_mode = st.sidebar.toggle(
     "🧭 使用引導（Wizard）",
@@ -530,13 +547,90 @@ def _render_wizard() -> None:
                 st.metric("推論實質報酬 r（毛）", f"{inferred:.2f}%")
 
             st.markdown("---")
-            st.session_state["use_cost_drag"] = st.checkbox("考慮費用率/摩擦/配息稅負（淨報酬）", value=bool(st.session_state.get("use_cost_drag", True)), key="wiz_use_drag")
+            st.session_state["use_cost_drag"] = st.checkbox(
+                "用「淨報酬」模擬（扣費用／摩擦／配息稅）",
+                value=bool(st.session_state.get("use_cost_drag", True)),
+                key="wiz_use_drag",
+                help=(
+                    "勾選時：從上方實質報酬（毛）再扣掉內扣成本與簡化的配息稅拖累，"
+                    "較貼近長期實拿。取消勾選則毛報酬直接進引擎（偏樂觀）。"
+                ),
+            )
             if st.session_state["use_cost_drag"]:
-                st.session_state["product_mode"] = st.radio("配息模式", ["累積型（不配息）", "配息型（配息會被課稅）"], index=0, key="wiz_pm")
-                st.session_state["expense_ratio_pct"] = st.slider("費用率拖累（%/年）", 0.0, 2.0, float(st.session_state.get("expense_ratio_pct", 0.20)), 0.05, key="wiz_er")
-                st.session_state["friction_drag_pct"] = st.slider("摩擦拖累（%/年）", 0.0, 1.0, float(st.session_state.get("friction_drag_pct", 0.05)), 0.01, key="wiz_fr")
-                st.session_state["dividend_yield_pct"] = st.slider("配息率（%/年）", 0.0, 10.0, float(st.session_state.get("dividend_yield_pct", 2.0)), 0.5, key="wiz_dy")
-                st.session_state["dividend_tax_pct"] = st.slider("配息稅負（%）", 0.0, 40.0, float(st.session_state.get("dividend_tax_pct", 30.0)), 1.0, key="wiz_dt")
+                st.caption("多數人不必改細項；需要時展開「細項滑桿」即可。")
+                with st.expander("📝 白話說明（可摺疊）", expanded=False):
+                    st.markdown(
+                        """
+- **費用率**：ETF／基金內扣，約等於每年從報酬裡少掉這一段。
+- **摩擦**：手續費、追蹤誤差、換匯與再平衡等，保守抓一點即可。
+- **配息型＋稅**：配息會當所得課稅；這裡用「配息率 × 稅率」**粗略**估每年拖累（非報稅試算）。
+- **累積型**：報酬留在淨值內、不配現金，此處**不**加配息稅拖累。
+"""
+                    )
+                with st.expander("進階：細項滑桿（多數人用預設即可）", expanded=False):
+                    st.session_state["product_mode"] = st.radio(
+                        "配息模式",
+                        ["累積型（不配息）", "配息型（配息會被課稅）"],
+                        index=0 if not str(st.session_state.get("product_mode", "")).startswith("配息型") else 1,
+                        key="wiz_pm",
+                        help="累積型：不配息、不估算配息稅拖累。配息型：會依下方配息率與稅率加算拖累。",
+                    )
+                    st.session_state["expense_ratio_pct"] = st.slider(
+                        "費用率拖累（%/年）",
+                        0.0,
+                        2.0,
+                        float(st.session_state.get("expense_ratio_pct", 0.20)),
+                        0.05,
+                        key="wiz_er",
+                        help="對照基金公開說明書「總費用率」；台股大盤 ETF 多為 0.1–0.5%。",
+                    )
+                    st.session_state["friction_drag_pct"] = st.slider(
+                        "摩擦拖累（%/年）",
+                        0.0,
+                        1.0,
+                        float(st.session_state.get("friction_drag_pct", 0.05)),
+                        0.01,
+                        key="wiz_fr",
+                        help="交易、滑價、追蹤誤差等；被動長抱可設低一點。",
+                    )
+                    st.session_state["dividend_yield_pct"] = st.slider(
+                        "配息率（%/年）",
+                        0.0,
+                        10.0,
+                        float(st.session_state.get("dividend_yield_pct", 2.0)),
+                        0.5,
+                        key="wiz_dy",
+                        help="僅在「配息型」時用來估算配息稅拖累；不是報酬加成。",
+                    )
+                    st.session_state["dividend_tax_pct"] = st.slider(
+                        "配息稅負（%）",
+                        0.0,
+                        40.0,
+                        float(st.session_state.get("dividend_tax_pct", 30.0)),
+                        1.0,
+                        key="wiz_dt",
+                        help="綜所稅邊際稅率或預扣的簡化比例；實務依個案與年度所得而不同。",
+                    )
+                _pm_w = str(st.session_state.get("product_mode", product_mode))
+                _er_w = float(st.session_state.get("expense_ratio_pct", expense_ratio_pct))
+                _fr_w = float(st.session_state.get("friction_drag_pct", friction_drag_pct))
+                _dy_w = float(st.session_state.get("dividend_yield_pct", dividend_yield_pct))
+                _dt_w = float(st.session_state.get("dividend_tax_pct", dividend_tax_pct))
+                _drag_w = _estimate_cost_drag_pct(
+                    product_mode=_pm_w,
+                    expense_ratio_pct=_er_w,
+                    friction_drag_pct=_fr_w,
+                    dividend_yield_pct=_dy_w,
+                    dividend_tax_pct=_dt_w,
+                )
+                st.caption(
+                    f"目前合計年拖累約 **{_drag_w:.2f}%**（費用 {_er_w:.2f}% + 摩擦 {_fr_w:.2f}%"
+                    + (
+                        f" + 配息稅拖累約 {_dy_w * (_dt_w / 100.0):.2f}%）"
+                        if _pm_w.startswith("配息型")
+                        else "；累積型不計配息稅）"
+                    )
+                )
 
             st.markdown("---")
             st.session_state["strategy_choice"] = st.radio("策略", ["固定提領", "消費微笑曲線", "GK 護欄"], index=2, horizontal=True, key="wiz_strat")
@@ -596,13 +690,19 @@ if wizard_mode:
         friction_drag_pct = float(st.session_state.get("friction_drag_pct", friction_drag_pct))
         dividend_yield_pct = float(st.session_state.get("dividend_yield_pct", dividend_yield_pct))
         dividend_tax_pct = float(st.session_state.get("dividend_tax_pct", dividend_tax_pct))
+    else:
+        # 取消「淨報酬」時應以毛報酬進引擎，勿沿用預設費用率
+        product_mode = "累積型（不配息）"
+        expense_ratio_pct = 0.0
+        friction_drag_pct = 0.0
+        dividend_yield_pct = 0.0
+        dividend_tax_pct = 0.0
 
 else:
     # 進階模式：關閉 Wizard 時顯示「全部選項」
     use_asset_alloc = True
     use_re_inputs = True
     use_pension_inputs = True
-    use_cost_drag = True
 
     with st.sidebar.expander("資產與提領（進階）", expanded=True):
         A0_securities_wan = st.number_input(
@@ -632,11 +732,78 @@ else:
         medical_premium = st.slider("醫療溢價 i_m (CPI + %)", 0.0, 4.0, float(medical_premium), 0.1)
 
     with st.sidebar.expander("成本／稅務拖累（進階，落實到引擎）", expanded=False):
-        product_mode = st.radio("ETF/基金配息模式", ["累積型（不配息）", "配息型（配息會被課稅）"], index=0)
-        expense_ratio_pct = st.slider("內扣費用率拖累（%/年）", 0.0, 2.0, float(expense_ratio_pct), 0.05)
-        friction_drag_pct = st.slider("交易/換股/追蹤誤差摩擦（%/年）", 0.0, 1.0, float(friction_drag_pct), 0.01)
-        dividend_yield_pct = st.slider("配息率（%/年，用於估算稅務拖累）", 0.0, 10.0, float(dividend_yield_pct), 0.5)
-        dividend_tax_pct = st.slider("配息稅負/扣繳率（%）", 0.0, 40.0, float(dividend_tax_pct), 1.0)
+        use_cost_drag = st.checkbox(
+            "用「淨報酬」模擬（扣費用／摩擦／配息稅）",
+            value=True,
+            key="adv_use_cost_drag",
+            help="與 Wizard 相同：勾選才從實質報酬（毛）扣除下方拖累；取消則毛報酬直接進引擎。",
+        )
+        st.caption(
+            "淨實質報酬 ＝ 毛實質報酬 −（費用率 + 摩擦 + 配息稅拖累）。配息稅拖累 ＝ 配息率 ×（稅率÷100），僅在「配息型」時列入。"
+        )
+        with st.expander("📝 白話說明", expanded=False):
+            st.markdown(
+                """
+- **內扣費用**：每年從報酬中扣掉的百分比，可對照 ETF 總費用率。
+- **摩擦**：交易、追蹤誤差等保守加總。
+- **配息型**：用配息率與稅率**粗估**配息相關稅負對報酬的拖累（非報稅試算）。
+- **累積型**：不配息現金流，此處不計配息稅拖累。
+"""
+            )
+        if use_cost_drag:
+            product_mode = st.radio(
+                "ETF/基金配息模式",
+                ["累積型（不配息）", "配息型（配息會被課稅）"],
+                index=0 if not str(product_mode).startswith("配息型") else 1,
+                key="adv_product_mode",
+                help="決定是否把「配息×稅率」算進年拖累。",
+            )
+            expense_ratio_pct = st.slider(
+                "內扣費用率拖累（%/年）",
+                0.0,
+                2.0,
+                float(expense_ratio_pct),
+                0.05,
+                help="公開說明書之總費用率等。",
+            )
+            friction_drag_pct = st.slider(
+                "交易/換股/追蹤誤差摩擦（%/年）",
+                0.0,
+                1.0,
+                float(friction_drag_pct),
+                0.01,
+                help="手續費、滑價、再平衡頻率等。",
+            )
+            dividend_yield_pct = st.slider(
+                "配息率（%/年，用於估算稅務拖累）",
+                0.0,
+                10.0,
+                float(dividend_yield_pct),
+                0.5,
+                help="僅配息型會列入「配息率×稅率」；不是額外報酬。",
+            )
+            dividend_tax_pct = st.slider(
+                "配息稅負/扣繳率（%）",
+                0.0,
+                40.0,
+                float(dividend_tax_pct),
+                1.0,
+                help="簡化為單一有效稅率；實務依所得結構不同。",
+            )
+            _adv_drag = _estimate_cost_drag_pct(
+                product_mode=product_mode,
+                expense_ratio_pct=expense_ratio_pct,
+                friction_drag_pct=friction_drag_pct,
+                dividend_yield_pct=dividend_yield_pct,
+                dividend_tax_pct=dividend_tax_pct,
+            )
+            st.caption(f"目前合計年拖累約 **{_adv_drag:.2f}%**。")
+        else:
+            product_mode = "累積型（不配息）"
+            expense_ratio_pct = 0.0
+            friction_drag_pct = 0.0
+            dividend_yield_pct = 0.0
+            dividend_tax_pct = 0.0
 
     with st.sidebar.expander("年齡區間（進階）", expanded=True):
         age_start = st.number_input("起始年齡 (歲)", 25, 70, int(age_start), 1)
