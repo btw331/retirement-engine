@@ -10,6 +10,7 @@ import numpy as np
 import time
 import os
 import json
+import re
 import urllib.request
 from datetime import datetime
 from urllib.parse import urlencode, quote
@@ -93,17 +94,69 @@ GREENHORN_BOOK_FEED = (
 def _greenhorn_category(title: str) -> str:
     """用標題關鍵字把綠角書評粗分類，讓即時更新文章能先進入可查詢架構。"""
     t = str(title)
-    if any(k in t for k in ["退休", "提領", "現金流", "Financial Freedom"]):
+    if any(k in t for k in ["退休", "提領", "現金流", "Financial Freedom", "Retirement", "How to Retire", "年金"]):
         return "A. 退休現金流與提領"
     if any(k in t for k in ["Wealth Ladder", "財富階梯", "財富梯級", "資產報酬率"]):
         return "B. 財富階梯與資產累積"
-    if any(k in t for k in ["ETF", "基金", "指數", "資產配置", "不選股", "Zero to Millionaire"]):
+    if any(k in t for k in ["ETF", "基金", "指數", "資產配置", "不選股", "Zero to Millionaire", "Bogle", "Vanguard", "Common Sense Investing", "Random Walk"]):
         return "C. 指數化投資與資產配置"
-    if any(k in t for k in ["How Not to Invest", "雜訊", "達爾文", "總經", "行為", "啟發"]):
+    if any(k in t for k in ["How Not to Invest", "雜訊", "達爾文", "總經", "行為", "啟發", "心理", "錯誤", "Irrational"]):
         return "D. 行為財務與資訊衛生"
-    if any(k in t for k in ["金融海嘯", "50 Years", "危機", "CAPE", "泡沫"]):
+    if any(k in t for k in ["金融海嘯", "50 Years", "危機", "CAPE", "泡沫", "Stress Test", "通膨", "債券", "大蕭條", "Market Never Forget"]):
         return "E. 金融史與風險事件"
+    if any(k in t for k in ["The Art of Spending Money", "花錢", "Spending Money", "消費", "用錢"]):
+        return "G. 消費與花錢哲學"
+    if any(k in t for k in ["Five Types of Wealth", "Jonathan Clements", "人生", "財富自由", "Taking Stock", "Best of Jonathan"]):
+        return "H. 人生財富與生活設計"
+    if any(k in t for k in ["工作", "職涯", "薪資", "收入", "人力資本", "Human Capital"]):
+        return "I. 人力資本與職涯收入"
+    if any(k in t for k in ["稅", "遺產", "繼承", "家庭", "配偶", "Estate", "Tax"]):
+        return "J. 稅務／遺產／家庭財務"
     return "F. 投資哲學與預期管理"
+
+
+def _greenhorn_series(title: str) -> str:
+    """把讀後感 1/2/3 合併到同一本書或同一系列，便於做專題總覽。"""
+    t = str(title).strip()
+    if not t:
+        return "未命名系列"
+    patterns = [
+        r"(.+?)(?:讀後感|Ū��P|讀後感P|讀後感\d|讀後感[一二三四五六七八九十])",
+        r"(.+?)(?:書評|介紹|發行有感|心得)",
+    ]
+    for pat in patterns:
+        m = re.search(pat, t)
+        if m:
+            s = m.group(1).strip(" 「」《》“”\"'—-:：")
+            return s[:60] if s else t[:60]
+    # 若標題含英文書名，優先取常見書名片段
+    known = [
+        "The Wealth Ladder", "How Not to Invest", "The Art of Spending Money",
+        "Your Journey to Financial Freedom", "From Zero to Millionaire",
+        "50 Years in the Making", "The Four Pillars of Investing",
+        "The Bogle Effect", "The Psychology of Money",
+    ]
+    for k in known:
+        if k.lower() in t.lower():
+            return k
+    return t[:60]
+
+
+def _greenhorn_platform_use(category: str) -> str:
+    """依分類給出預設平台應用建議。"""
+    mapping = {
+        "A. 退休現金流與提領": "連結 IWR、GK 護欄、蒙地卡羅成功率與失敗路徑剖析。",
+        "B. 財富階梯與資產累積": "用於資產位階定位、退休門檻校準與報酬率假設警示。",
+        "C. 指數化投資與資產配置": "連結資產結構、推論實質報酬、成本拖累與再平衡教育。",
+        "D. 行為財務與資訊衛生": "做成反錯誤清單，提醒使用者遠離雜訊與短線預測。",
+        "E. 金融史與風險事件": "補強壓力測試、SORR、肥尾/負偏態與歷史情境說明。",
+        "F. 投資哲學與預期管理": "用於報酬期待校準，避免把模型調成過度樂觀。",
+        "G. 消費與花錢哲學": "補強低 IWR 使用者的消費優化與生活品質決策。",
+        "H. 人生財富與生活設計": "補強非金錢財富、時間配置、健康與家庭目標的規劃面。",
+        "I. 人力資本與職涯收入": "補強尚未退休者的收入成長、職涯風險與儲蓄率模組。",
+        "J. 稅務／遺產／家庭財務": "補強高資產家庭的稅務、繼承、配偶與跨代財務提醒。",
+    }
+    return mapping.get(str(category), "作為延伸閱讀與人工分類候選。")
 
 
 def _greenhorn_featured_rows() -> list[dict[str, str]]:
@@ -234,6 +287,26 @@ def _greenhorn_auto_takeaways(category: str, title: str = "") -> dict[str, str]:
             "重點啟發": "投資有基礎也有極限；合理期待與可執行紀律比追求神奇績效更重要。",
             "退休平台應用": "可用來檢查保守/中性/積極報酬設定是否合理，並提醒使用者不要任意拉高 r。",
         },
+        "G. 消費與花錢哲學": {
+            "短摘要": "這類文章適合高資產或低 IWR 使用者，重點不只是能否退休，而是如何把資產轉成生活品質。",
+            "重點啟發": "資產足夠後，風險不只是不夠花，也包括過度節省、錯過重要經驗與無效資產堆積。",
+            "退休平台應用": "可接到本平台的低 IWR 提醒，新增消費優化、年度享受預算與捐贈/家庭支持情境。",
+        },
+        "H. 人生財富與生活設計": {
+            "短摘要": "這類文章把財富延伸到時間、健康、人際關係與生活選擇，適合退休規劃的非金錢面向。",
+            "重點啟發": "退休規劃不是只讓資產不歸零，也要讓時間、健康與關係有可執行的安排。",
+            "退休平台應用": "可新增生活目標檢核、健康資本與家庭支持等非財務提醒。",
+        },
+        "I. 人力資本與職涯收入": {
+            "短摘要": "這類文章提醒尚未退休者，人力資本與職涯收入常是資產累積前期最重要的引擎。",
+            "重點啟發": "追求過高投資報酬不如先提升收入、儲蓄率與抗失業能力，尤其在累積期更明顯。",
+            "退休平台應用": "可新增退休前累積期模組：收入成長率、儲蓄率、提前退休門檻與失業緩衝。",
+        },
+        "J. 稅務／遺產／家庭財務": {
+            "短摘要": "這類文章適合資產已高於退休門檻者，焦點轉向稅務、繼承、配偶保障與跨代財務安排。",
+            "重點啟發": "高資產家庭的風險不只在投資報酬，也在財產配置、繼承順序、稅務與家庭溝通。",
+            "退休平台應用": "可新增高資產提示：遺產稅門檻、受益人檢查、配偶現金流與家庭治理清單。",
+        },
     }
     guide = guide_map.get(str(category), guide_map["F. 投資哲學與預期管理"]).copy()
     guide["標題判讀"] = f"本文目前以標題「{title}」與分類「{category}」產生導讀；若是精選索引文章，另有人工整理重點。"
@@ -262,14 +335,62 @@ def _fetch_greenhorn_book_feed(max_results: int = 30) -> pd.DataFrame:
                 link = lk.get("href", "")
                 break
         tags = "、".join([c.get("term", "") for c in entry.get("category", []) if c.get("term")])
+        category = _greenhorn_category(title)
         rows.append({
-            "分類": _greenhorn_category(title),
+            "分類": category,
+            "系列": _greenhorn_series(title),
             "日期": published,
             "文章": title,
             "連結": link,
             "原始標籤": tags,
+            "平台可用方式": _greenhorn_platform_use(category),
         })
     return pd.DataFrame(rows)
+
+
+@st.cache_data(ttl=3600)
+def _fetch_greenhorn_book_feed_all(page_size: int = 150, max_pages: int = 8) -> pd.DataFrame:
+    """分頁抓取綠角財經書讀後感標籤 feed；用於全量更新。"""
+    rows: list[dict[str, str]] = []
+    start = 1
+    for _ in range(int(max_pages)):
+        params = urlencode({"alt": "json", "max-results": int(page_size), "start-index": int(start)})
+        url = f"{GREENHORN_BOOK_FEED}?{params}"
+        req = urllib.request.Request(
+            url,
+            headers={"User-Agent": "Mozilla/5.0 (RetirementPlanner/1.0)"},
+        )
+        with urllib.request.urlopen(req, timeout=20) as resp:
+            payload = json.loads(resp.read().decode("utf-8"))
+        entries = payload.get("feed", {}).get("entry", [])
+        if not entries:
+            break
+        for entry in entries:
+            title = entry.get("title", {}).get("$t", "").strip()
+            published = entry.get("published", {}).get("$t", "")[:10]
+            link = ""
+            for lk in entry.get("link", []):
+                if lk.get("rel") == "alternate":
+                    link = lk.get("href", "")
+                    break
+            tags = "、".join([c.get("term", "") for c in entry.get("category", []) if c.get("term")])
+            category = _greenhorn_category(title)
+            rows.append({
+                "分類": category,
+                "系列": _greenhorn_series(title),
+                "日期": published,
+                "文章": title,
+                "連結": link,
+                "原始標籤": tags,
+                "平台可用方式": _greenhorn_platform_use(category),
+            })
+        if len(entries) < int(page_size):
+            break
+        start += int(page_size)
+    df = pd.DataFrame(rows)
+    if not df.empty:
+        df = df.drop_duplicates(subset=["連結"]).sort_values("日期", ascending=False)
+    return df
 
 
 # ── URL 導覽：用 query 參數預選「分類/主題」（保持 UI 整潔、免改引擎）──────
@@ -5381,22 +5502,23 @@ elif page_id == "greenhorn":
         "**使用方式**：先看「精選索引」建立閱讀地圖；若要抓最新文章，按「一鍵更新」即可即時讀取 Blogger 標籤 feed。"
     )
 
-    gh_tabs = st.tabs(["文章導讀", "精選索引", "一鍵更新最新文章", "分類說明"])
+    gh_tabs = st.tabs(["文章導讀", "精選索引", "一鍵更新／全量資料庫", "系列總覽", "平台改進 Roadmap", "分類說明"])
 
     with gh_tabs[0]:
         st.subheader("文章導讀模式")
         featured_df = pd.DataFrame(_greenhorn_featured_rows())
         source_mode = st.radio(
             "導讀來源",
-            ["精選索引（人工整理）", "最新文章（自動分類）"],
+            ["精選索引（人工整理）", "最新文章（自動分類）", "全量資料庫（自動分類）"],
             horizontal=True,
             key="greenhorn_reader_source",
         )
 
-        if source_mode.startswith("最新文章"):
-            latest_df_reader = st.session_state.get("greenhorn_latest_df")
+        if source_mode.startswith("最新文章") or source_mode.startswith("全量"):
+            reader_key = "greenhorn_all_df" if source_mode.startswith("全量") else "greenhorn_latest_df"
+            latest_df_reader = st.session_state.get(reader_key)
             if not isinstance(latest_df_reader, pd.DataFrame) or latest_df_reader.empty:
-                st.warning("尚未抓取最新文章。請先到「一鍵更新最新文章」tab 按下更新。")
+                st.warning("尚未抓取資料。請先到「一鍵更新／全量資料庫」tab 按下更新。")
                 reader_df = featured_df
                 st.caption("目前暫以精選索引供導讀。")
             else:
@@ -5478,21 +5600,25 @@ elif page_id == "greenhorn":
             """)
 
     with gh_tabs[2]:
-        st.subheader("一鍵更新：抓取綠角最新財經書讀後感")
+        st.subheader("一鍵更新／全量資料庫")
         st.caption(
             f"來源：綠角 Blogger 標籤 feed「{GREENHORN_BOOK_LABEL}」。"
-            "更新結果會暫存在本次 Streamlit session；相同請求 15 分鐘內使用快取。"
+            "更新結果會暫存在本次 Streamlit session；最新文章快取 15 分鐘，全量資料庫快取 1 小時。"
         )
-        col_fetch, col_count, col_clear = st.columns([1, 1, 1])
+        col_fetch, col_full, col_count, col_clear = st.columns([1, 1, 1, 1])
         with col_count:
             gh_limit = st.number_input("抓取篇數", min_value=10, max_value=150, value=30, step=10)
         with col_fetch:
             do_fetch = st.button("一鍵更新最新文章", type="primary", key="btn_greenhorn_fetch")
+        with col_full:
+            do_full_fetch = st.button("全量更新所有書評", key="btn_greenhorn_full_fetch")
         with col_clear:
             if st.button("清除快取後重抓", key="btn_greenhorn_clear"):
                 _fetch_greenhorn_book_feed.clear()
+                _fetch_greenhorn_book_feed_all.clear()
                 st.session_state.pop("greenhorn_latest_df", None)
-                st.success("已清除快取，請再按一次「一鍵更新最新文章」。")
+                st.session_state.pop("greenhorn_all_df", None)
+                st.success("已清除快取，請再按一次更新。")
 
         if do_fetch:
             try:
@@ -5503,6 +5629,16 @@ elif page_id == "greenhorn":
             except Exception as exc:
                 st.error(f"即時更新失敗：{exc}")
                 st.caption("可能是部署環境暫時無法連線 Blogger；你仍可使用左側的精選索引。")
+
+        if do_full_fetch:
+            try:
+                with st.spinner("正在分頁抓取綠角所有財經書讀後感..."):
+                    st.session_state["greenhorn_all_df"] = _fetch_greenhorn_book_feed_all()
+                    st.session_state["greenhorn_all_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                st.success(f"全量更新完成，共 {len(st.session_state['greenhorn_all_df']):,} 篇。")
+            except Exception as exc:
+                st.error(f"全量更新失敗：{exc}")
+                st.caption("可能是部署環境暫時無法連線 Blogger；請稍後重試，或先使用精選索引。")
 
         latest_df = st.session_state.get("greenhorn_latest_df")
         if isinstance(latest_df, pd.DataFrame) and not latest_df.empty:
@@ -5531,11 +5667,79 @@ elif page_id == "greenhorn":
         else:
             st.warning("尚未更新。請按「一鍵更新最新文章」。")
 
+        all_df = st.session_state.get("greenhorn_all_df")
+        if isinstance(all_df, pd.DataFrame) and not all_df.empty:
+            st.divider()
+            st.subheader("全量資料庫摘要")
+            m1, m2, m3 = st.columns(3)
+            with m1:
+                st.metric("文章數", f"{len(all_df):,}")
+            with m2:
+                st.metric("系列數", f"{all_df['系列'].nunique():,}")
+            with m3:
+                st.metric("分類數", f"{all_df['分類'].nunique():,}")
+            st.caption(f"全量最後更新時間：{st.session_state.get('greenhorn_all_at', '本次 session')}")
+            st.dataframe(
+                all_df.head(200),
+                use_container_width=True,
+                hide_index=True,
+                column_config={"連結": st.column_config.LinkColumn("連結")},
+            )
+            st.download_button(
+                "下載全量文章索引 CSV",
+                data=all_df.to_csv(index=False, encoding="utf-8-sig").encode("utf-8-sig"),
+                file_name="greenhorn_book_reviews_all.csv",
+                mime="text/csv",
+            )
+
         st.caption(
             f"Feed URL：{GREENHORN_BOOK_FEED}?alt=json&max-results={int(gh_limit)}"
         )
 
     with gh_tabs[3]:
+        st.subheader("系列總覽")
+        series_source = st.session_state.get("greenhorn_all_df")
+        if not isinstance(series_source, pd.DataFrame) or series_source.empty:
+            series_source = st.session_state.get("greenhorn_latest_df")
+        if not isinstance(series_source, pd.DataFrame) or series_source.empty:
+            series_source = pd.DataFrame(_greenhorn_featured_rows())
+            series_source["系列"] = series_source["文章"].map(_greenhorn_series)
+            series_source["日期"] = "精選文章"
+            st.caption("目前尚未全量更新，暫用精選索引產生系列總覽。")
+        series_df = (
+            series_source.groupby(["系列", "分類"], dropna=False)
+            .agg(篇數=("文章", "count"), 最新日期=("日期", "max"))
+            .reset_index()
+            .sort_values(["篇數", "最新日期"], ascending=[False, False])
+        )
+        st.dataframe(series_df, use_container_width=True, hide_index=True)
+        chosen_series = st.selectbox("查看某一系列文章", series_df["系列"].astype(str).tolist(), key="greenhorn_series_select")
+        series_articles = series_source[series_source["系列"].astype(str) == str(chosen_series)].sort_values("日期", ascending=False)
+        st.dataframe(
+            series_articles,
+            use_container_width=True,
+            hide_index=True,
+            column_config={"連結": st.column_config.LinkColumn("連結")},
+        )
+
+    with gh_tabs[4]:
+        st.subheader("平台改進 Roadmap（由綠角書評主題反推）")
+        roadmap_df = pd.DataFrame(
+            [
+                ["高", "全量書評資料庫", "把一鍵更新改成全量更新、系列分組與 CSV 匯出", "已在本頁實作初版；後續可加本地持久化快取"],
+                ["高", "花錢與生活品質模組", "低 IWR / 高資產使用者需要知道如何安心花錢，而非只看資產不歸零", "新增年度享受預算、家庭支持、捐贈與旅行預算情境"],
+                ["高", "反錯誤清單", "How Not to Invest 類文章可轉成退休後行為防呆", "新增「不要因新聞調 r、不要把配息當額外報酬」等 checklist"],
+                ["中", "財富階梯定位", "Wealth Ladder 系列可幫使用者理解自己在台灣家庭資產分布的位置", "新增 A0 對照表，顯示前 50% / 前 20% / 前 10% 等定位"],
+                ["中", "人力資本/職涯累積期", "尚未退休者的收入成長與儲蓄率比追逐高報酬更重要", "新增退休前累積模組：收入成長、儲蓄率、失業緩衝"],
+                ["中", "高資產家庭治理", "資產超過退休標準後，重點轉向稅務、配偶、繼承與跨代配置", "新增受益人/遺產稅/配偶現金流檢核，不直接做法律建議"],
+                ["低", "文章人工精修摘要", "自動分類可用於索引，但重要系列仍需人工摘要", "先挑 The Wealth Ladder、How Not to Invest、Your Journey 三大系列精修"],
+            ],
+            columns=["優先度", "改進項目", "原因", "建議做法"],
+        )
+        st.dataframe(roadmap_df, use_container_width=True, hide_index=True)
+        st.info("建議先做「花錢與生活品質模組」與「反錯誤清單」：這兩項最符合你的目標客群，也最能補強目前平台偏計算引擎的缺口。")
+
+    with gh_tabs[5]:
         st.subheader("分類說明")
         category_df = pd.DataFrame(
             [
@@ -5545,6 +5749,10 @@ elif page_id == "greenhorn":
                 ["D. 行為財務與資訊衛生", "投資雜訊、選股誘惑、媒體/名嘴、決策錯誤", "教育資訊庫、避免錯誤操作、熊市行為守則"],
                 ["E. 金融史與風險事件", "金融海嘯、估值、景氣循環、債務危機", "壓力測試、SORR、蒙地卡羅肥尾/負偏態"],
                 ["F. 投資哲學與預期管理", "投資的邊界、合理報酬、長期紀律", "平台預設值、保守/中性/積極情境設定"],
+                ["G. 消費與花錢哲學", "花錢、生活品質、享受資產、消費決策", "低 IWR 使用者的消費優化、年度享受預算"],
+                ["H. 人生財富與生活設計", "時間、健康、家庭、人際關係與非金錢財富", "退休目標、健康資本、生活設計提醒"],
+                ["I. 人力資本與職涯收入", "薪資、職涯、工作所得、收入成長", "退休前累積期、儲蓄率、失業緩衝"],
+                ["J. 稅務／遺產／家庭財務", "稅務、繼承、配偶、家庭治理", "高資產家庭的檢核清單與風險提醒"],
             ],
             columns=["分類", "適合整理的內容", "與退休規劃平台的關聯"],
         )
@@ -5671,7 +5879,7 @@ elif page_id == "changelog":
             ["2026-04", "風險剖析", "失敗路徑剖析（直方圖/最差曲線/CSV）", "知道「失敗發生在幾歲、最差路徑長怎樣」並可下載分析", "📊 退休規劃 → 蒙地卡羅驗證區"],
             ["2026-04", "壓力測試", "表格顯示改為名目 + 括號實質", "避免把 90 歲資產誤解為 2026 金額", "📊 退休規劃（壓力測試）"],
             ["2026-04", "不動產 UX", "租金淨收入/流動性折扣/以房養老文案校正", "更容易正確填參數，不改任何演算法", "側欄不動產（Wizard/Advanced）"],
-            ["2026-04", "延伸閱讀", "新增綠角延伸閱讀 + 一鍵更新 + 文章導讀", "可查閱精選導讀，並即時抓取綠角最新文章做自動分類", "📗 綠角延伸閱讀"],
+            ["2026-04", "延伸閱讀", "綠角延伸閱讀升級為全量資料庫", "可全量抓取書評、系列分組、文章導讀，並反推平台改進 Roadmap", "📗 綠角延伸閱讀"],
         ],
         columns=["月份", "類別", "變更", "使用者可見影響", "位置"],
     )
@@ -5752,21 +5960,22 @@ elif page_id == "changelog":
 降低填錯參數的機率，提升結果可信度與 UX；不觸碰計算引擎行為。
         """)
 
-    with st.expander("F｜綠角延伸閱讀 + 一鍵更新 + 文章導讀", expanded=False):
+    with st.expander("F｜綠角延伸閱讀全量資料庫 + Roadmap", expanded=False):
         st.markdown("""
 **新增**  
 - 新增 `📗 綠角延伸閱讀` 分頁。  
 - 內建精選財經書讀後感索引與「文章導讀模式」（短摘要、重點啟發、退休平台應用、原文連結）。  
 - 新增「一鍵更新」：即時讀取綠角 Blogger 標籤 feed「財經類書籍讀後感」。  
-- 更新結果可依分類篩選、產生標題/分類導讀，並可下載 CSV。  
+- 新增「全量更新所有書評」：分頁抓取完整 feed、產生系列分組、分類統計與 CSV。  
+- 新增「平台改進 Roadmap」：把綠角書評主題反推成平台可改進項目。  
 
 **使用者價值**  
-讓教育內容不只依賴固定內文，也能隨綠角新文章更新而延伸閱讀；同時不重製原文全文，降低轉載風險。
+讓教育內容不只依賴固定內文，也能隨綠角新文章更新而延伸閱讀；同時可從書評主題發現平台缺口，且不重製原文全文。
 
 **如何驗證**  
 - 進入 `📗 綠角延伸閱讀` → `文章導讀`，選擇精選文章，應看到摘要、啟發與平台應用。  
-- 進入 `📗 綠角延伸閱讀` → `一鍵更新最新文章`。  
-- 若執行環境可連網，應顯示最新文章清單、CSV 下載按鈕，並可回到導讀模式查看自動導讀。  
+- 進入 `📗 綠角延伸閱讀` → `一鍵更新／全量資料庫`，按「全量更新所有書評」。  
+- 若執行環境可連網，應顯示文章數、系列數、分類數與 CSV 下載按鈕。  
         """)
 
     st.divider()
