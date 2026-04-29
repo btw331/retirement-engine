@@ -200,6 +200,46 @@ def _greenhorn_featured_rows() -> list[dict[str, str]]:
     ]
 
 
+def _greenhorn_auto_takeaways(category: str, title: str = "") -> dict[str, str]:
+    """依分類產生平台內導讀；不抓取/重製原文全文。"""
+    title = str(title)
+    guide_map = {
+        "A. 退休現金流與提領": {
+            "短摘要": "這類文章適合用來建立「退休不是只看配息」的觀念，重點通常落在總資產、提領率、現金流穩定度與長期支出管理。",
+            "重點啟發": "不要把配息率當作退休安全的唯一指標；應同時看資產總值、IWR、提領策略與市場路徑風險。",
+            "退休平台應用": "可搭配本平台的 IWR、GK 護欄、蒙地卡羅成功率與失敗路徑剖析一起閱讀。",
+        },
+        "B. 財富階梯與資產累積": {
+            "短摘要": "這類文章協助使用者理解自己在台灣家庭財富分布中的位置，以及投資報酬、工作所得與儲蓄率的相對角色。",
+            "重點啟發": "財富位階提升不只靠投資報酬；高儲蓄、收入成長、不犯大錯與長期紀律同樣重要。",
+            "退休平台應用": "適合用來校準 A0、退休門檻與報酬率假設，避免用不切實際的高報酬率硬達標。",
+        },
+        "C. 指數化投資與資產配置": {
+            "短摘要": "這類文章聚焦 ETF、基金、分散、成本與長期市場報酬，是退休資產配置的基礎閱讀。",
+            "重點啟發": "低成本、廣泛分散與長期持有，通常比追逐熱門標的或頻繁交易更可控。",
+            "退休平台應用": "可對應本平台的資產結構、推論實質報酬、費用率/摩擦成本與配息稅拖累。",
+        },
+        "D. 行為財務與資訊衛生": {
+            "短摘要": "這類文章提醒投資人遠離雜訊、名嘴與短線預測，避免在退休關鍵期做出情緒性決策。",
+            "重點啟發": "投資成敗常不是因為不知道更多資訊，而是因為被太多低品質資訊干擾。",
+            "退休平台應用": "可搭配熊市應對、再平衡與提領紀律，作為退休後行為防呆提醒。",
+        },
+        "E. 金融史與風險事件": {
+            "短摘要": "這類文章從金融危機、估值與歷史事件理解風險，提醒投資人不要只相信單一路徑預測。",
+            "重點啟發": "重大風險往往來自長期累積的結構問題；退休規劃需考慮肥尾、低報酬與早期大跌。",
+            "退休平台應用": "可對應壓力測試、蒙地卡羅肥尾/負偏態設定、SORR 與失敗路徑剖析。",
+        },
+        "F. 投資哲學與預期管理": {
+            "短摘要": "這類文章適合建立合理報酬期待與長期紀律，避免用過度樂觀假設包裝退休安全感。",
+            "重點啟發": "投資有基礎也有極限；合理期待與可執行紀律比追求神奇績效更重要。",
+            "退休平台應用": "可用來檢查保守/中性/積極報酬設定是否合理，並提醒使用者不要任意拉高 r。",
+        },
+    }
+    guide = guide_map.get(str(category), guide_map["F. 投資哲學與預期管理"]).copy()
+    guide["標題判讀"] = f"本文目前以標題「{title}」與分類「{category}」產生導讀；若是精選索引文章，另有人工整理重點。"
+    return guide
+
+
 @st.cache_data(ttl=900)
 def _fetch_greenhorn_book_feed(max_results: int = 30) -> pd.DataFrame:
     """即時讀取綠角 Blogger 標籤 feed。ttl=900 代表 15 分鐘內相同請求走快取。"""
@@ -264,6 +304,7 @@ _nav_to_page_id = {
     "retire": "retire",
     "edu": "edu",
     "guide": "guide",
+    "greenhorn": "greenhorn",
     "ins": "ins",
 }
 if _nav in _nav_to_page_id:
@@ -5340,9 +5381,80 @@ elif page_id == "greenhorn":
         "**使用方式**：先看「精選索引」建立閱讀地圖；若要抓最新文章，按「一鍵更新」即可即時讀取 Blogger 標籤 feed。"
     )
 
-    gh_tabs = st.tabs(["精選索引", "一鍵更新最新文章", "分類說明"])
+    gh_tabs = st.tabs(["文章導讀", "精選索引", "一鍵更新最新文章", "分類說明"])
 
     with gh_tabs[0]:
+        st.subheader("文章導讀模式")
+        featured_df = pd.DataFrame(_greenhorn_featured_rows())
+        source_mode = st.radio(
+            "導讀來源",
+            ["精選索引（人工整理）", "最新文章（自動分類）"],
+            horizontal=True,
+            key="greenhorn_reader_source",
+        )
+
+        if source_mode.startswith("最新文章"):
+            latest_df_reader = st.session_state.get("greenhorn_latest_df")
+            if not isinstance(latest_df_reader, pd.DataFrame) or latest_df_reader.empty:
+                st.warning("尚未抓取最新文章。請先到「一鍵更新最新文章」tab 按下更新。")
+                reader_df = featured_df
+                st.caption("目前暫以精選索引供導讀。")
+            else:
+                reader_df = latest_df_reader.copy()
+                if "書/主題" not in reader_df.columns:
+                    reader_df["書/主題"] = "即時更新文章"
+                if "核心重點" not in reader_df.columns:
+                    reader_df["核心重點"] = ""
+                if "平台可用方式" not in reader_df.columns:
+                    reader_df["平台可用方式"] = ""
+        else:
+            reader_df = featured_df
+
+        reader_cat_options = ["全部"] + sorted(reader_df["分類"].dropna().unique().tolist())
+        reader_cat = st.selectbox("依分類篩選導讀文章", reader_cat_options, key="greenhorn_reader_cat")
+        reader_show = reader_df if reader_cat == "全部" else reader_df[reader_df["分類"] == reader_cat]
+        if reader_show.empty:
+            st.info("此分類目前沒有文章。")
+        else:
+            article_options = reader_show["文章"].astype(str).tolist()
+            article_title = st.selectbox("選擇文章", article_options, key="greenhorn_reader_article")
+            selected = reader_show[reader_show["文章"].astype(str) == article_title].iloc[0].to_dict()
+            auto_guide = _greenhorn_auto_takeaways(selected.get("分類", ""), selected.get("文章", ""))
+
+            st.markdown(f"### {selected.get('文章', '')}")
+            meta_cols = st.columns(3)
+            with meta_cols[0]:
+                st.metric("分類", selected.get("分類", "未分類"))
+            with meta_cols[1]:
+                st.metric("書/主題", selected.get("書/主題", "即時更新文章"))
+            with meta_cols[2]:
+                st.metric("日期", selected.get("日期", "精選文章"))
+
+            with st.container(border=True):
+                st.markdown("#### 短摘要")
+                if selected.get("核心重點"):
+                    st.write(selected.get("核心重點"))
+                else:
+                    st.write(auto_guide["短摘要"])
+
+                st.markdown("#### 重點啟發")
+                st.write(auto_guide["重點啟發"])
+
+                st.markdown("#### 退休平台應用")
+                if selected.get("平台可用方式"):
+                    st.write(selected.get("平台可用方式"))
+                else:
+                    st.write(auto_guide["退休平台應用"])
+
+                if not selected.get("核心重點"):
+                    st.caption(auto_guide["標題判讀"])
+
+            link = selected.get("連結", "")
+            if link:
+                st.link_button("前往綠角原文閱讀", link)
+            st.caption("版權說明：本平台只提供導讀、摘要與連結，不重製綠角原文全文。")
+
+    with gh_tabs[1]:
         st.subheader("精選索引（人工整理版）")
         featured_df = pd.DataFrame(_greenhorn_featured_rows())
         gh_cat_options = ["全部"] + sorted(featured_df["分類"].unique().tolist())
@@ -5365,7 +5477,7 @@ elif page_id == "greenhorn":
 - **行為防呆**：把「遠離投資雜訊」「不追逐高配息」「不要用短期總經預測調參數」做成教育提醒。  
             """)
 
-    with gh_tabs[1]:
+    with gh_tabs[2]:
         st.subheader("一鍵更新：抓取綠角最新財經書讀後感")
         st.caption(
             f"來源：綠角 Blogger 標籤 feed「{GREENHORN_BOOK_LABEL}」。"
@@ -5423,7 +5535,7 @@ elif page_id == "greenhorn":
             f"Feed URL：{GREENHORN_BOOK_FEED}?alt=json&max-results={int(gh_limit)}"
         )
 
-    with gh_tabs[2]:
+    with gh_tabs[3]:
         st.subheader("分類說明")
         category_df = pd.DataFrame(
             [
@@ -5559,7 +5671,7 @@ elif page_id == "changelog":
             ["2026-04", "風險剖析", "失敗路徑剖析（直方圖/最差曲線/CSV）", "知道「失敗發生在幾歲、最差路徑長怎樣」並可下載分析", "📊 退休規劃 → 蒙地卡羅驗證區"],
             ["2026-04", "壓力測試", "表格顯示改為名目 + 括號實質", "避免把 90 歲資產誤解為 2026 金額", "📊 退休規劃（壓力測試）"],
             ["2026-04", "不動產 UX", "租金淨收入/流動性折扣/以房養老文案校正", "更容易正確填參數，不改任何演算法", "側欄不動產（Wizard/Advanced）"],
-            ["2026-04", "延伸閱讀", "新增綠角延伸閱讀 + 一鍵更新", "可查閱精選財經書讀後感，並即時抓取綠角最新文章", "📗 綠角延伸閱讀"],
+            ["2026-04", "延伸閱讀", "新增綠角延伸閱讀 + 一鍵更新 + 文章導讀", "可查閱精選導讀，並即時抓取綠角最新文章做自動分類", "📗 綠角延伸閱讀"],
         ],
         columns=["月份", "類別", "變更", "使用者可見影響", "位置"],
     )
@@ -5640,20 +5752,21 @@ elif page_id == "changelog":
 降低填錯參數的機率，提升結果可信度與 UX；不觸碰計算引擎行為。
         """)
 
-    with st.expander("F｜綠角延伸閱讀 + 一鍵更新", expanded=False):
+    with st.expander("F｜綠角延伸閱讀 + 一鍵更新 + 文章導讀", expanded=False):
         st.markdown("""
 **新增**  
 - 新增 `📗 綠角延伸閱讀` 分頁。  
-- 內建精選財經書讀後感索引（分類、主題、核心重點、平台可用方式）。  
+- 內建精選財經書讀後感索引與「文章導讀模式」（短摘要、重點啟發、退休平台應用、原文連結）。  
 - 新增「一鍵更新」：即時讀取綠角 Blogger 標籤 feed「財經類書籍讀後感」。  
-- 更新結果可依分類篩選，並可下載 CSV。  
+- 更新結果可依分類篩選、產生標題/分類導讀，並可下載 CSV。  
 
 **使用者價值**  
-讓教育內容不只依賴固定內文，也能隨綠角新文章更新而延伸閱讀。
+讓教育內容不只依賴固定內文，也能隨綠角新文章更新而延伸閱讀；同時不重製原文全文，降低轉載風險。
 
 **如何驗證**  
+- 進入 `📗 綠角延伸閱讀` → `文章導讀`，選擇精選文章，應看到摘要、啟發與平台應用。  
 - 進入 `📗 綠角延伸閱讀` → `一鍵更新最新文章`。  
-- 若執行環境可連網，應顯示最新文章清單與 CSV 下載按鈕。  
+- 若執行環境可連網，應顯示最新文章清單、CSV 下載按鈕，並可回到導讀模式查看自動導讀。  
         """)
 
     st.divider()
