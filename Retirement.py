@@ -9,8 +9,10 @@ import pandas as pd
 import numpy as np
 import time
 import os
+import json
+import urllib.request
 from datetime import datetime
-from urllib.parse import urlencode
+from urllib.parse import urlencode, quote
 
 # ── 台灣退休理財內容黑名單（使用者指定）───────────────────────────────
 # 注意：此清單僅用於「內容引用/推薦」層，不影響任何計算引擎。
@@ -79,6 +81,155 @@ def _qs(**kwargs) -> str:
     """產生相對網址 query string，用於頁內導覽超連結。"""
     clean = {k: v for k, v in kwargs.items() if v is not None and v != ""}
     return "?" + urlencode(clean, doseq=False)
+
+
+GREENHORN_BOOK_LABEL = "財經類書籍讀後感"
+GREENHORN_BOOK_FEED = (
+    "https://greenhornfinancefootnote.blogspot.com/feeds/posts/default/-/"
+    f"{quote(GREENHORN_BOOK_LABEL)}"
+)
+
+
+def _greenhorn_category(title: str) -> str:
+    """用標題關鍵字把綠角書評粗分類，讓即時更新文章能先進入可查詢架構。"""
+    t = str(title)
+    if any(k in t for k in ["退休", "提領", "現金流", "Financial Freedom"]):
+        return "A. 退休現金流與提領"
+    if any(k in t for k in ["Wealth Ladder", "財富階梯", "財富梯級", "資產報酬率"]):
+        return "B. 財富階梯與資產累積"
+    if any(k in t for k in ["ETF", "基金", "指數", "資產配置", "不選股", "Zero to Millionaire"]):
+        return "C. 指數化投資與資產配置"
+    if any(k in t for k in ["How Not to Invest", "雜訊", "達爾文", "總經", "行為", "啟發"]):
+        return "D. 行為財務與資訊衛生"
+    if any(k in t for k in ["金融海嘯", "50 Years", "危機", "CAPE", "泡沫"]):
+        return "E. 金融史與風險事件"
+    return "F. 投資哲學與預期管理"
+
+
+def _greenhorn_featured_rows() -> list[dict[str, str]]:
+    """內建精選索引；即時更新失敗時仍可使用。"""
+    return [
+        {
+            "分類": "A. 退休現金流與提領",
+            "書/主題": "Your Journey to Financial Freedom",
+            "文章": "“Your Journey to Financial Freedom”讀後感5—退休資產，不是到了退休才有用",
+            "連結": "https://greenhornfinancefootnote.blogspot.com/2024/07/your-journey-to-financial-freedom5.html",
+            "核心重點": "退休資產不只在退休當下才有用，也提供安全感、選擇權與家庭保護。",
+            "平台可用方式": "放入「退休資產不是只看現金流」說明，降低高配息迷思。",
+        },
+        {
+            "分類": "A. 退休現金流與提領",
+            "書/主題": "退休投資與提領觀念",
+            "文章": "退休投資與提領恐怕不是你想的那樣",
+            "連結": "https://greenhornfinancefootnote.blogspot.com/2022/07/investing-in-retirement-can-be-better.html",
+            "核心重點": "退休提領不應只看配息，重點是總資產、提領率與資產配置。",
+            "平台可用方式": "對應 IWR、GK 護欄與總報酬提領教育內容。",
+        },
+        {
+            "分類": "B. 財富階梯與資產累積",
+            "書/主題": "Wealth Ladder / 台灣財富梯級",
+            "文章": "台灣財富梯級現況—你位在那一階呢?",
+            "連結": "https://greenhornfinancefootnote.blogspot.com/2025/10/wealth-ladder-in-taiwan.html",
+            "核心重點": "台灣家庭財富分布落差大；高資產家庭通常金融資產占比也高。",
+            "平台可用方式": "可用於使用者資產定位與退休門檻校準。",
+        },
+        {
+            "分類": "B. 財富階梯與資產累積",
+            "書/主題": "Required Rate of Return to Climb Wealth Ladder",
+            "文章": "攀爬台灣財富階梯需要多高的資產報酬率?",
+            "連結": "https://greenhornfinancefootnote.blogspot.com/2025/10/required-rate-of-return-to-climb-wealth.html",
+            "核心重點": "單靠投資報酬跨越財富階梯很困難，所得、儲蓄與不犯錯同樣重要。",
+            "平台可用方式": "放入「不要用不切實際報酬率硬達標」警示。",
+        },
+        {
+            "分類": "C. 指數化投資與資產配置",
+            "書/主題": "綠角的基金8堂課",
+            "文章": "“綠角的基金8堂課”發行有感",
+            "連結": "https://greenhornfinancefootnote.blogspot.com/2011/01/8_27.html",
+            "核心重點": "資產配置、定期投資與基金/ETF 觀念是長期投資基礎。",
+            "平台可用方式": "對應資產結構輸入、成本拖累、長期實質報酬假設。",
+        },
+        {
+            "分類": "C. 指數化投資與資產配置",
+            "書/主題": "From Zero to Millionaire / 不選股，我才賺到錢",
+            "文章": "《不選股，我才賺到錢》讀後感3",
+            "連結": "https://greenhornfinancefootnote.blogspot.com/2025/10/from-zero-to-millionaire3.html",
+            "核心重點": "指數化投資不是平庸，而是用較少行為錯誤取得市場報酬。",
+            "平台可用方式": "放入「為何預設全球分散/ETF」教育內容。",
+        },
+        {
+            "分類": "D. 行為財務與資訊衛生",
+            "書/主題": "How Not to Invest",
+            "文章": "How Not to Invest讀後感2—讓身邊充滿投資雜訊的方法",
+            "連結": "https://greenhornfinancefootnote.blogspot.com/2025/12/how-not-to-invest2.html",
+            "核心重點": "主動遠離投資雜訊，比追逐更多資訊更重要。",
+            "平台可用方式": "對應退休後避免新聞驅動操作與熊市守則。",
+        },
+        {
+            "分類": "D. 行為財務與資訊衛生",
+            "書/主題": "What I Learned About Investing from Darwin",
+            "文章": "讀後感5—為何你可以不用理會總經數據",
+            "連結": "https://greenhornfinancefootnote.blogspot.com/2024/10/what-i-learned-about-investing-from.html",
+            "核心重點": "長期投資人不必過度依賴短期總經預測，企業成長與紀律更重要。",
+            "平台可用方式": "放入「不要用短期景氣預測調參數」提醒。",
+        },
+        {
+            "分類": "E. 金融史與風險事件",
+            "書/主題": "50 Years in the Making",
+            "文章": "讀後感1—2008金融海嘯的長遠成因",
+            "連結": "https://greenhornfinancefootnote.blogspot.com/2021/07/50-years-in-making1-2008.html",
+            "核心重點": "金融危機常來自長期債務、消費與制度累積，不是單一年份事件。",
+            "平台可用方式": "對應壓力測試、SORR、肥尾風險說明。",
+        },
+        {
+            "分類": "E. 金融史與風險事件",
+            "書/主題": "50 Years in the Making",
+            "文章": "讀後感2—兩位大師的不同看法",
+            "連結": "https://greenhornfinancefootnote.blogspot.com/2021/08/50-years-in-making2.html",
+            "核心重點": "即使大師觀點也會不同；估值、預期報酬與市場風險都具不確定性。",
+            "平台可用方式": "支援蒙地卡羅/壓力測試，而非單一路徑預測。",
+        },
+        {
+            "分類": "F. 投資哲學與預期管理",
+            "書/主題": "格局",
+            "文章": "《格局》讀後感4—投資的基礎與極限",
+            "連結": "https://greenhornfinancefootnote.blogspot.com/2023/11/4.html",
+            "核心重點": "投資有基礎，也有極限；合理期待比追求神奇績效重要。",
+            "平台可用方式": "對應保守/中性/積極報酬設定與過高報酬警示。",
+        },
+    ]
+
+
+@st.cache_data(ttl=900)
+def _fetch_greenhorn_book_feed(max_results: int = 30) -> pd.DataFrame:
+    """即時讀取綠角 Blogger 標籤 feed。ttl=900 代表 15 分鐘內相同請求走快取。"""
+    params = urlencode({"alt": "json", "max-results": int(max_results)})
+    url = f"{GREENHORN_BOOK_FEED}?{params}"
+    req = urllib.request.Request(
+        url,
+        headers={"User-Agent": "Mozilla/5.0 (RetirementPlanner/1.0)"},
+    )
+    with urllib.request.urlopen(req, timeout=12) as resp:
+        payload = json.loads(resp.read().decode("utf-8"))
+
+    rows: list[dict[str, str]] = []
+    for entry in payload.get("feed", {}).get("entry", []):
+        title = entry.get("title", {}).get("$t", "").strip()
+        published = entry.get("published", {}).get("$t", "")[:10]
+        link = ""
+        for lk in entry.get("link", []):
+            if lk.get("rel") == "alternate":
+                link = lk.get("href", "")
+                break
+        tags = "、".join([c.get("term", "") for c in entry.get("category", []) if c.get("term")])
+        rows.append({
+            "分類": _greenhorn_category(title),
+            "日期": published,
+            "文章": title,
+            "連結": link,
+            "原始標籤": tags,
+        })
+    return pd.DataFrame(rows)
 
 
 # ── URL 導覽：用 query 參數預選「分類/主題」（保持 UI 整潔、免改引擎）──────
@@ -1386,6 +1537,7 @@ _PAGES = [
     ("retire", "📊 退休規劃"),
     ("edu", "📚 教育資訊庫"),
     ("guide", "🛠️ 提領實務指南"),
+    ("greenhorn", "📗 綠角延伸閱讀"),
     ("ins", "🛡️ 保險規劃（參考）"),
     ("changelog", "🗒️ 更新紀錄"),
 ]
@@ -5176,6 +5328,120 @@ VT    佔比 > 55%？ → 賣出 VT，買入 006208（或補充現金池）
     )
 
 # ──────────────────────────────────────────────
+# PAGE：綠角延伸閱讀（財經書讀後感索引 + 即時更新）
+# ──────────────────────────────────────────────
+elif page_id == "greenhorn":
+    st.title("📗 綠角延伸閱讀")
+    st.caption(
+        "整理綠角財經筆記中與退休、資產配置、投資行為與風險管理相關的財經書讀後感。"
+        "本頁只做索引與重點導讀，不重製原文。"
+    )
+    st.info(
+        "**使用方式**：先看「精選索引」建立閱讀地圖；若要抓最新文章，按「一鍵更新」即可即時讀取 Blogger 標籤 feed。"
+    )
+
+    gh_tabs = st.tabs(["精選索引", "一鍵更新最新文章", "分類說明"])
+
+    with gh_tabs[0]:
+        st.subheader("精選索引（人工整理版）")
+        featured_df = pd.DataFrame(_greenhorn_featured_rows())
+        gh_cat_options = ["全部"] + sorted(featured_df["分類"].unique().tolist())
+        gh_cat = st.selectbox("依分類篩選", gh_cat_options, key="greenhorn_featured_cat")
+        show_df = featured_df if gh_cat == "全部" else featured_df[featured_df["分類"] == gh_cat]
+        st.dataframe(
+            show_df,
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "連結": st.column_config.LinkColumn("連結"),
+            },
+        )
+        st.caption("精選索引是人工整理的穩定清單；適合放入教育資訊庫或作為平台內部閱讀地圖。")
+
+        with st.expander("如何把這些文章用在退休平台？", expanded=False):
+            st.markdown("""
+- **填參數前**：提醒使用者不要把名目報酬、配息率或短期績效直接帶入長期模型。  
+- **看結果時**：用書評觀念解釋 IWR、成功率、壓力測試與 SORR。  
+- **行為防呆**：把「遠離投資雜訊」「不追逐高配息」「不要用短期總經預測調參數」做成教育提醒。  
+            """)
+
+    with gh_tabs[1]:
+        st.subheader("一鍵更新：抓取綠角最新財經書讀後感")
+        st.caption(
+            f"來源：綠角 Blogger 標籤 feed「{GREENHORN_BOOK_LABEL}」。"
+            "更新結果會暫存在本次 Streamlit session；相同請求 15 分鐘內使用快取。"
+        )
+        col_fetch, col_count, col_clear = st.columns([1, 1, 1])
+        with col_count:
+            gh_limit = st.number_input("抓取篇數", min_value=10, max_value=150, value=30, step=10)
+        with col_fetch:
+            do_fetch = st.button("一鍵更新最新文章", type="primary", key="btn_greenhorn_fetch")
+        with col_clear:
+            if st.button("清除快取後重抓", key="btn_greenhorn_clear"):
+                _fetch_greenhorn_book_feed.clear()
+                st.session_state.pop("greenhorn_latest_df", None)
+                st.success("已清除快取，請再按一次「一鍵更新最新文章」。")
+
+        if do_fetch:
+            try:
+                with st.spinner("正在讀取綠角 Blogger feed..."):
+                    st.session_state["greenhorn_latest_df"] = _fetch_greenhorn_book_feed(int(gh_limit))
+                    st.session_state["greenhorn_latest_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                st.success("更新完成。")
+            except Exception as exc:
+                st.error(f"即時更新失敗：{exc}")
+                st.caption("可能是部署環境暫時無法連線 Blogger；你仍可使用左側的精選索引。")
+
+        latest_df = st.session_state.get("greenhorn_latest_df")
+        if isinstance(latest_df, pd.DataFrame) and not latest_df.empty:
+            st.caption(f"最後更新時間：{st.session_state.get('greenhorn_latest_at', '本次 session')}")
+            latest_cat_options = ["全部"] + sorted(latest_df["分類"].dropna().unique().tolist())
+            latest_cat = st.selectbox("依分類篩選最新文章", latest_cat_options, key="greenhorn_latest_cat")
+            latest_show = latest_df if latest_cat == "全部" else latest_df[latest_df["分類"] == latest_cat]
+            st.dataframe(
+                latest_show,
+                use_container_width=True,
+                hide_index=True,
+                column_config={
+                    "連結": st.column_config.LinkColumn("連結"),
+                },
+            )
+            st.download_button(
+                "下載最新文章索引 CSV",
+                data=latest_df.to_csv(index=False, encoding="utf-8-sig").encode("utf-8-sig"),
+                file_name="greenhorn_book_reviews_latest.csv",
+                mime="text/csv",
+            )
+
+            st.markdown("#### 最新文章快速連結")
+            for _, row in latest_show.head(12).iterrows():
+                st.markdown(f"- `{row.get('日期', '')}` [{row.get('文章', '')}]({row.get('連結', '')}) — {row.get('分類', '')}")
+        else:
+            st.warning("尚未更新。請按「一鍵更新最新文章」。")
+
+        st.caption(
+            f"Feed URL：{GREENHORN_BOOK_FEED}?alt=json&max-results={int(gh_limit)}"
+        )
+
+    with gh_tabs[2]:
+        st.subheader("分類說明")
+        category_df = pd.DataFrame(
+            [
+                ["A. 退休現金流與提領", "退休資產、提領策略、配息迷思、資產轉現金流", "IWR、GK 護欄、蒙地卡羅成功率、三桶金"],
+                ["B. 財富階梯與資產累積", "財富分位、資產報酬率、所得/儲蓄/投資的角色", "使用者定位、退休門檻、資產目標校準"],
+                ["C. 指數化投資與資產配置", "ETF、基金、全球分散、成本、長期報酬", "資產結構、推論實質報酬、成本拖累"],
+                ["D. 行為財務與資訊衛生", "投資雜訊、選股誘惑、媒體/名嘴、決策錯誤", "教育資訊庫、避免錯誤操作、熊市行為守則"],
+                ["E. 金融史與風險事件", "金融海嘯、估值、景氣循環、債務危機", "壓力測試、SORR、蒙地卡羅肥尾/負偏態"],
+                ["F. 投資哲學與預期管理", "投資的邊界、合理報酬、長期紀律", "平台預設值、保守/中性/積極情境設定"],
+            ],
+            columns=["分類", "適合整理的內容", "與退休規劃平台的關聯"],
+        )
+        st.dataframe(category_df, use_container_width=True, hide_index=True)
+        st.caption(
+            "一鍵更新的自動分類以文章標題關鍵字判斷，適合做初步索引；重要文章仍建議人工微調分類與摘要。"
+        )
+
+# ──────────────────────────────────────────────
 # PAGE：保險規劃（僅展示參考資訊，不連動退休引擎）
 # ──────────────────────────────────────────────
 elif page_id == "ins":
@@ -5293,6 +5559,7 @@ elif page_id == "changelog":
             ["2026-04", "風險剖析", "失敗路徑剖析（直方圖/最差曲線/CSV）", "知道「失敗發生在幾歲、最差路徑長怎樣」並可下載分析", "📊 退休規劃 → 蒙地卡羅驗證區"],
             ["2026-04", "壓力測試", "表格顯示改為名目 + 括號實質", "避免把 90 歲資產誤解為 2026 金額", "📊 退休規劃（壓力測試）"],
             ["2026-04", "不動產 UX", "租金淨收入/流動性折扣/以房養老文案校正", "更容易正確填參數，不改任何演算法", "側欄不動產（Wizard/Advanced）"],
+            ["2026-04", "延伸閱讀", "新增綠角延伸閱讀 + 一鍵更新", "可查閱精選財經書讀後感，並即時抓取綠角最新文章", "📗 綠角延伸閱讀"],
         ],
         columns=["月份", "類別", "變更", "使用者可見影響", "位置"],
     )
@@ -5371,6 +5638,22 @@ elif page_id == "changelog":
 
 **使用者價值**  
 降低填錯參數的機率，提升結果可信度與 UX；不觸碰計算引擎行為。
+        """)
+
+    with st.expander("F｜綠角延伸閱讀 + 一鍵更新", expanded=False):
+        st.markdown("""
+**新增**  
+- 新增 `📗 綠角延伸閱讀` 分頁。  
+- 內建精選財經書讀後感索引（分類、主題、核心重點、平台可用方式）。  
+- 新增「一鍵更新」：即時讀取綠角 Blogger 標籤 feed「財經類書籍讀後感」。  
+- 更新結果可依分類篩選，並可下載 CSV。  
+
+**使用者價值**  
+讓教育內容不只依賴固定內文，也能隨綠角新文章更新而延伸閱讀。
+
+**如何驗證**  
+- 進入 `📗 綠角延伸閱讀` → `一鍵更新最新文章`。  
+- 若執行環境可連網，應顯示最新文章清單與 CSV 下載按鈕。  
         """)
 
     st.divider()
