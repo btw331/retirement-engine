@@ -5502,9 +5502,93 @@ elif page_id == "greenhorn":
         "**使用方式**：先看「精選索引」建立閱讀地圖；若要抓最新文章，按「一鍵更新」即可即時讀取 Blogger 標籤 feed。"
     )
 
-    gh_tabs = st.tabs(["文章導讀", "精選索引", "一鍵更新／全量資料庫", "系列總覽", "平台改進 Roadmap", "分類說明"])
+    gh_tabs = st.tabs(["知識地圖", "文章導讀", "精選索引", "一鍵更新／全量資料庫", "系列總覽", "平台改進 Roadmap", "分類說明"])
 
     with gh_tabs[0]:
+        st.subheader("知識地圖：用主題選內容")
+        st.caption("先看主題地圖，再點選你想看的知識區塊；下方會列出對應文章。")
+
+        map_source = st.radio(
+            "知識地圖資料來源",
+            ["精選索引", "最新文章", "全量資料庫"],
+            horizontal=True,
+            key="greenhorn_map_source",
+        )
+        if map_source == "全量資料庫":
+            map_df = st.session_state.get("greenhorn_all_df")
+        elif map_source == "最新文章":
+            map_df = st.session_state.get("greenhorn_latest_df")
+        else:
+            map_df = pd.DataFrame(_greenhorn_featured_rows())
+            map_df["系列"] = map_df["文章"].map(_greenhorn_series)
+            map_df["日期"] = "精選文章"
+
+        if not isinstance(map_df, pd.DataFrame) or map_df.empty:
+            st.warning("這個資料來源尚未更新，暫時改用精選索引。")
+            map_df = pd.DataFrame(_greenhorn_featured_rows())
+            map_df["系列"] = map_df["文章"].map(_greenhorn_series)
+            map_df["日期"] = "精選文章"
+
+        map_counts = map_df["分類"].value_counts().to_dict()
+        dot = f"""
+digraph {{
+  graph [rankdir=LR, bgcolor="transparent", pad="0.2", nodesep="0.45", ranksep="0.7"];
+  node [shape=box, style="rounded,filled", fontname="Microsoft JhengHei", fontsize=12, color="#B7C2D0", fillcolor="#F7FAFC"];
+  edge [color="#94A3B8", arrowsize=0.7];
+  center [label="綠角財經書讀後感\\n知識地圖", shape=oval, fillcolor="#E0F2FE", color="#38BDF8"];
+  retire [label="退休現金流與提領\\n{map_counts.get('A. 退休現金流與提領', 0)} 篇", fillcolor="#DCFCE7"];
+  wealth [label="財富階梯與資產累積\\n{map_counts.get('B. 財富階梯與資產累積', 0)} 篇", fillcolor="#FEF3C7"];
+  asset [label="指數化投資與資產配置\\n{map_counts.get('C. 指數化投資與資產配置', 0)} 篇", fillcolor="#E0E7FF"];
+  behavior [label="行為財務與資訊衛生\\n{map_counts.get('D. 行為財務與資訊衛生', 0)} 篇", fillcolor="#FCE7F3"];
+  risk [label="金融史與風險事件\\n{map_counts.get('E. 金融史與風險事件', 0)} 篇", fillcolor="#FEE2E2"];
+  philosophy [label="投資哲學與預期管理\\n{map_counts.get('F. 投資哲學與預期管理', 0)} 篇", fillcolor="#F3E8FF"];
+  spending [label="消費與花錢哲學\\n{map_counts.get('G. 消費與花錢哲學', 0)} 篇", fillcolor="#FFEDD5"];
+  life [label="人生財富與生活設計\\n{map_counts.get('H. 人生財富與生活設計', 0)} 篇", fillcolor="#CCFBF1"];
+  career [label="人力資本與職涯收入\\n{map_counts.get('I. 人力資本與職涯收入', 0)} 篇", fillcolor="#DBEAFE"];
+  family [label="稅務／遺產／家庭財務\\n{map_counts.get('J. 稅務／遺產／家庭財務', 0)} 篇", fillcolor="#F5F5F4"];
+  center -> retire; center -> wealth; center -> asset; center -> behavior; center -> risk;
+  wealth -> spending; wealth -> life; wealth -> career; wealth -> family;
+  retire -> behavior; retire -> risk; asset -> behavior; asset -> risk; philosophy -> behavior;
+}}
+        """
+        st.graphviz_chart(dot, use_container_width=True)
+
+        st.markdown("#### 選擇你想看的知識區塊")
+        category_cards = [
+            ("A. 退休現金流與提領", "退休提領、IWR、現金流"),
+            ("B. 財富階梯與資產累積", "資產位階、儲蓄、報酬率"),
+            ("C. 指數化投資與資產配置", "ETF、成本、全球分散"),
+            ("D. 行為財務與資訊衛生", "雜訊、名嘴、錯誤決策"),
+            ("E. 金融史與風險事件", "危機、泡沫、壓力測試"),
+            ("F. 投資哲學與預期管理", "合理報酬、長期紀律"),
+            ("G. 消費與花錢哲學", "安心花錢、生活品質"),
+            ("H. 人生財富與生活設計", "時間、健康、家庭"),
+            ("I. 人力資本與職涯收入", "收入成長、職涯、儲蓄率"),
+            ("J. 稅務／遺產／家庭財務", "稅務、繼承、配偶"),
+        ]
+        for row_start in range(0, len(category_cards), 2):
+            card_cols = st.columns(2)
+            for idx, (cat_name, cat_desc) in enumerate(category_cards[row_start:row_start + 2]):
+                with card_cols[idx]:
+                    count = int(map_counts.get(cat_name, 0))
+                    if st.button(f"{cat_name}（{count}）\n{cat_desc}", key=f"greenhorn_map_btn_{row_start}_{idx}", use_container_width=True):
+                        st.session_state["greenhorn_map_cat"] = cat_name
+
+        selected_map_cat = st.session_state.get("greenhorn_map_cat", "A. 退休現金流與提領")
+        st.markdown(f"#### 目前選擇：{selected_map_cat}")
+        map_show = map_df[map_df["分類"] == selected_map_cat].copy()
+        if map_show.empty:
+            st.info("這個資料來源目前沒有此分類文章。可切換資料來源或先做全量更新。")
+        else:
+            st.dataframe(
+                map_show.head(30),
+                use_container_width=True,
+                hide_index=True,
+                column_config={"連結": st.column_config.LinkColumn("連結")},
+            )
+            st.caption("想看單篇導讀：切到「文章導讀」tab，選擇同一個分類即可。")
+
+    with gh_tabs[1]:
         st.subheader("文章導讀模式")
         featured_df = pd.DataFrame(_greenhorn_featured_rows())
         source_mode = st.radio(
@@ -5576,7 +5660,7 @@ elif page_id == "greenhorn":
                 st.link_button("前往綠角原文閱讀", link)
             st.caption("版權說明：本平台只提供導讀、摘要與連結，不重製綠角原文全文。")
 
-    with gh_tabs[1]:
+    with gh_tabs[2]:
         st.subheader("精選索引（人工整理版）")
         featured_df = pd.DataFrame(_greenhorn_featured_rows())
         gh_cat_options = ["全部"] + sorted(featured_df["分類"].unique().tolist())
@@ -5599,7 +5683,7 @@ elif page_id == "greenhorn":
 - **行為防呆**：把「遠離投資雜訊」「不追逐高配息」「不要用短期總經預測調參數」做成教育提醒。  
             """)
 
-    with gh_tabs[2]:
+    with gh_tabs[3]:
         st.subheader("一鍵更新／全量資料庫")
         st.caption(
             f"來源：綠角 Blogger 標籤 feed「{GREENHORN_BOOK_LABEL}」。"
@@ -5696,7 +5780,7 @@ elif page_id == "greenhorn":
             f"Feed URL：{GREENHORN_BOOK_FEED}?alt=json&max-results={int(gh_limit)}"
         )
 
-    with gh_tabs[3]:
+    with gh_tabs[4]:
         st.subheader("系列總覽")
         series_source = st.session_state.get("greenhorn_all_df")
         if not isinstance(series_source, pd.DataFrame) or series_source.empty:
@@ -5722,7 +5806,7 @@ elif page_id == "greenhorn":
             column_config={"連結": st.column_config.LinkColumn("連結")},
         )
 
-    with gh_tabs[4]:
+    with gh_tabs[5]:
         st.subheader("平台改進 Roadmap（由綠角書評主題反推）")
         roadmap_df = pd.DataFrame(
             [
@@ -5739,7 +5823,7 @@ elif page_id == "greenhorn":
         st.dataframe(roadmap_df, use_container_width=True, hide_index=True)
         st.info("建議先做「花錢與生活品質模組」與「反錯誤清單」：這兩項最符合你的目標客群，也最能補強目前平台偏計算引擎的缺口。")
 
-    with gh_tabs[5]:
+    with gh_tabs[6]:
         st.subheader("分類說明")
         category_df = pd.DataFrame(
             [
